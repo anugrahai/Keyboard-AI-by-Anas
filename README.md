@@ -1,28 +1,24 @@
 # Keyboard AI by Anas
 
 **Pengembang:** Anugrah Anas (SonarLab Indonesia)  
-**Versi dokumentasi:** menyesuaikan rilis terbaru di [Releases](https://github.com/anugrahai/Keyboard-AI-by-Anas/releases)  
 **Platform:** Android 7.0 (API 24) ke atas  
 
 Papan ketik Android yang menggabungkan tata letak QWERTY modern, asisten multi-AI, input suara, dan mode Braille layar penuh. Dirancang untuk **pengguna awas** dan **pengguna tunanetra / pembaca layar** (TalkBack, Jieshuo, dan sejenisnya).
 
 ---
 
-## Unduhan
+## Unduh aplikasi
 
-- **Versi terbaru (disarankan):**  
-  https://github.com/anugrahai/Keyboard-AI-by-Anas/releases/latest  
+**[Unduh APK di halaman Releases](https://github.com/anugrahai/Keyboard-AI-by-Anas/releases/latest)**
 
-- Rilis lama (contoh v6.0):  
-  https://github.com/anugrahai/Keyboard-AI-by-Anas/releases/tag/v6.0  
-
-Unduh berkas `.apk` dari halaman rilis, lalu pasang di perangkat. Setelah memperbarui, pastikan `versionCode` pada APK baru lebih tinggi agar sistem Android mengenali sebagai pembaruan.
+Di halaman itu, unduh berkas **`.apk`**, lalu pasang di ponsel.  
+Setiap pembaruan resmi hanya memakai tautan yang sama — tidak perlu mencari nomor versi.
 
 ---
 
 ## Instalasi dan aktivasi
 
-1. Unduh APK dari halaman **Releases**, buka file tersebut di ponsel.
+1. Buka tautan **Releases** di atas, unduh file `.apk`, buka di ponsel.
 2. Izinkan instalasi dari sumber yang tidak dikenal jika diminta, lalu pasang.
 3. Buka aplikasi **Keyboard AI**, ikuti wizard awal:
    - Aktifkan keyboard di **Pengaturan sistem → Bahasa & masukan → Keyboard virtual**.
@@ -196,12 +192,12 @@ Wizard pertama kali juga mengarahkan aktivasi keyboard, pengecualian baterai, da
 
 ## 7. Catatan stabilitas kotak edit
 
-Beberapa aplikasi memulai ulang atau menyembunyikan IME saat konten berubah (contoh: hasil pencarian WhatsApp yang terus diperbarui, atau fokus di Gemini). Versi terbaru menyesuaikan:
+Beberapa aplikasi memulai ulang atau menyembunyikan IME saat konten berubah (contoh: hasil pencarian WhatsApp yang terus diperbarui, atau fokus di Gemini). Keyboard ini menyesuaikan:
 
 - **Pencarian WhatsApp** — keyboard tetap dapat tampil dan dipakai mengetik; state dijaga saat daftar hasil di-refresh; gesture mengetik pada mode Braille mengikuti pola yang sama seperti di chat bila memungkinkan.  
 - **Gemini** — setelah keyboard disembunyikan secara sengaja, pembukaan ulang otomatis dibatasi agar tidak “muncul sendiri” saat pembaca layar hanya membaca kotak edit.  
 
-Perilaku exact bergantung pada versi APK yang terpasang; selalu unduh dari **Releases → latest**.
+Untuk selalu memakai build resmi terkini, unduh dari tautan **Releases** di bagian atas halaman ini.
 
 ---
 
@@ -231,7 +227,10 @@ Tidak diperlukan root.
 - **Email:** anugrahannas677@gmail.com  
 - **Repositori:** https://github.com/anugrahai/Keyboard-AI-by-Anas  
 
-Untuk distribusi APK baru: naikkan `versionCode` / `versionName`, build APK, lalu buat **Release GitHub baru** (tag baru, misalnya `v6.1`) dan unggah berkas `.apk`. Jangan menimpa aset pada tag lama jika ingin riwayat versi tetap jelas.
+**Cara memublikasikan APK baru (untuk pengembang):**  
+1. Build APK (naikkan `versionCode` di proyek agar Android mengenali pembaruan).  
+2. Buka **Releases** di GitHub → unggah file `.apk` (boleh ganti / hapus file lama di rilis yang sama, atau buat rilis baru).  
+3. Pengguna tetap mengunduh lewat tautan **Releases** di atas — README tidak perlu diubah setiap ada APK baru.
 
 ---
 
@@ -245,6 +244,6 @@ Proyek ini diarahkan untuk kemaslahatan aksesibilitas dan teknologi inklusif di 
 
 | Keperluan | URL |
 |-----------|-----|
+| **Unduh APK** | https://github.com/anugrahai/Keyboard-AI-by-Anas/releases/latest |
 | Repo | https://github.com/anugrahai/Keyboard-AI-by-Anas |
-| Unduh terbaru | https://github.com/anugrahai/Keyboard-AI-by-Anas/releases/latest |
 | Profil pengembang | https://github.com/anugrahai |
