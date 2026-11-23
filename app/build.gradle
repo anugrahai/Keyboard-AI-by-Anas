@@ -1,0 +1,86 @@
+plugins {
+    id 'com.android.application'
+    id 'com.google.gms.google-services'
+}
+
+android {
+    namespace 'com.annas'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.annas"
+        minSdk 24
+        targetSdk 35
+        versionCode 2700
+        versionName "27.0"
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++17 -O3 -DNDEBUG"
+                arguments "-DANDROID_STL=c++_shared"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
+
+    signingConfigs {
+        release {
+            storeFile file('../signing/uu-20261021-0014.p12')
+            storeType 'PKCS12'
+            storePassword 'QqPF4JRUho6Uwo4m'
+            keyAlias 'kunci'
+            keyPassword 'QqPF4JRUho6Uwo4m'
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        resources {
+            excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        }
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    // ExploreByTouchHelper: pohon aksesibilitas tombol keyboard (dipakai Mode Percobaan Gaya Gboard).
+    implementation 'androidx.customview:customview:1.1.0'
+    // Native PDF text extraction
+    implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
+    // Offline OCR multi-bahasa (Tesseract 5.5.1 + Leptonica) untuk PDF bergambar/scan
+    implementation 'cz.adaptech.tesseract4android:tesseract4android:4.9.0'
+    // FFmpeg 8.1 Full GPL Native C/NEON Engine (16KB page-size & Android 15 ready) untuk Audio & Video Pro
+    implementation 'dev.ffmpegkit-maintained:ffmpeg-kit-full-gpl:8.1.9'
+    // Firebase Auth & Firestore + Google Sign-In
+    implementation platform('com.google.firebase:firebase-bom:33.8.0')
+    implementation 'com.google.firebase:firebase-auth'
+    implementation 'com.google.firebase:firebase-firestore'
+    implementation 'com.google.android.gms:play-services-auth:21.3.0'
+}
