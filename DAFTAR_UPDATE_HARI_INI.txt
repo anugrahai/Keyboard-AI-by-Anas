@@ -1,36 +1,28 @@
-KEYBOARD AI BY ANAS — DAFTAR UPDATE v27.0 (STUDIO EDITOR AUDIO & VIDEO 36 FITUR TERPISAH, STUDIO GUDANG & LABORATORIUM BACKSOUND/EFEK FILM, GEMINI TTS 3.8 FIX, NAVIGASI GESER & LOGIKA TANGGAL WORD)
+KEYBOARD AI BY ANAS — DAFTAR UPDATE v28.0 (98 MP3 BACKSOUND & EFEK FILM NYATA, PALET KATEGORI + CENTANG ADAPTIF, PINNED KONVERSI KANAN BAWAH & KEMBALI BERTAHAP)
 
-Pembaruan Utama Rilis v27.0:
-1. STUDIO GUDANG & LABORATORIUM PENGUJI SUARA (BACKSOUND 8 KATEGORI 1-2 MENIT & 32 EFEK SUARA DRAMA FILM):
-- Dilengkapi koleksi Backsound Musik bawaan aplikasi berdurasi 1-2 menit dalam 8 folder kategori lengkap:
-  • Musik Islami & Religi Khidmat
-  • Musik Piano Santai & Emosional
+Pembaruan Utama Rilis v28.0:
+1. 98 AUDIO MP3 REKAMAN ASLI DI STUDIO GUDANG & LABORATORIUM AUDIO:
+- Menggantikan seluruh suara sintetis lama dengan 98 file MP3 asli beresolusi tinggi dalam 10 kategori lengkap:
+  • Musik Islami, Nasheed & Religi
+  • Musik Audio 3D / 8D Spatial Surround
+  • Musik Piano Santai & Sedih
   • Musik Jazz & Cafe Klasik
   • Musik Rock & Energi Action
-  • Musik Jedag-Jedug & Beat Viral
-  • Musik Tegang, Misteri & Horor Film
+  • Musik Jedag-Jedug, Phonk & EDM
+  • Musik Tegang, Horor & Misteri Film
   • Musik Sinematik Film & Epik
-  • Musik Relaksasi, Alam & Lo-Fi
-- Dilengkapi 32 Efek Suara Drama & Film (SFX) siap tempur dalam 4 folder kategori:
-  • Tabrakan, Kaca Pecah & Ledakan
-  • Perkelahian, Pukulan & Senjata
-  • Horor, Tegang, Petir & Alam
-  • Transisi, Reaksi, Komedi & Sensor
-- Studio Gudang & Laboratorium Suara: bisa klik untuk langsung memilih audio, klik Putar untuk menguji kesesuaian suara di Laboratorium, atau klik Hapus pada audio yang tidak diperlukan lalu tekan Simpan Perubahan Gudang (Save). Daftar audio yang dihapus tersimpan permanen dan ikut tersinkron saat dibagikan.
-- Pilihan Backsound terintegrasi penuh di Gemini TTS, Editor Audio, Editor Video, Gabung Audio, dan Mixer (bisa pilih dari Backsound Aplikasi atau Memori HP Sendiri).
+  • Musik & Efek Kartun, Komedi & Suara Orang Ketawa
+  • Efek Suara Drama & Film (Kaca Pecah, Tabrakan, Ledakan, Tinju, Pedang, Tembakan, Laser, Horor, Petir, Sirine, Whoosh, Tepuk Tangan)
+- Tampilan Laboratorium & Gudang memanjang ke bawah: ketuk nama audio untuk langsung Putar/Jeda, sampingnya Jeda & Hapus, dan tombol Simpan di kanan bawah.
 
-2. ROMBAK TOTAL EDITOR AUDIO PRO (36 FITUR) & EDITOR VIDEO PRO (36 FITUR):
-- Begitu masuk Editor Audio atau Editor Video, langsung menyuguhkan 36 fitur berbeda fungsi (1 Fitur = 1 Layar Khusus, tidak campur aduk).
-- Pemisahan tegas lintas media: di Editor Audio hanya ada Audio ke Video MP4 (+ Foto Cover), sedangkan di Editor Video hanya ada Video ke Audio (Ekstrak MP3/M4A/WAV/FLAC).
-- Player simpel (Mundur, Putar/Jeda, Maju) tanpa tombol geser 10/5/1/0.2 detik yang membingungkan.
-- Potong sambil putar + Undo/Redo bertingkat tanpa perlu tombol pratinjau terpisah: saat Tandai Titik Awal ditekan audio/video tetap lanjut berputar; saat Tandai Titik Akhir ditekan langsung memutar rentang potongan. Tombol Putar di atas selalu memutar rentang hasil potongan, dengan tombol Undo (batal titik akhir -> batal titik awal) dan Redo.
-- Fitur Live Sisipkan Efek Suara Drama/Film & Backsound Sambil Putar: cukup ketuk tombol efek (Kaca Pecah, Tabrakan, Ledakan, Pukulan, Pedang, Tembakan, Horor, Petir, dll) tepat saat video/audio berputar untuk menempelkan efek di detik tersebut secara real-time, lengkap dengan Undo & Redo.
+2. STUDIO EFEK DRAMA/FILM & BACKSOUND (PALET KATEGORI + CENTANG INLINE SUPER AKSESIBEL):
+- Pilih Kategori lewat dialog bersih (Seluruh Efek Singkat, Seluruh Backsound Musik, atau per kategori) lalu daftarnya langsung tampil memanjang rapi di 1 ScrollView tunggal tanpa scroll bertumpuk.
+- Efek Singkat tampil super bersih: cukup CheckBox + tombol Putar untuk tes suara sebelum centang di detik target.
+- Backsound Musik: default otomatis masuk dari detik pemutar saat dicentang dan diputar terus sampai akhir; tombol "Tandai Awal", "Tandai Akhir", dan "Sampai Akhir" menempel langsung di baris lagu yang bersangkutan (bukan terpisah di atas layar).
+- Otomatis pre-roll transisi -2 detik untuk mendengar hasil tempelan efek/backsound secara mulus, serta update baris in-place agar fokus TalkBack dan posisi gulir tidak melompat.
+- Tombol "Mulai Konversi Audio" / "Mulai Konversi Video" selalu terkunci di pojok kanan bawah layar (pinned footer bar).
+- Sesi centangan otomatis dibersihkan saat menekan Kembali/Back ke daftar fitur agar tidak terbawa ke sesi berikutnya.
 
-3. PERBAIKAN GEMINI TTS (3.8 FLASH, 2.5 FLASH, 2.5 PRO) & UPDATE SUARA RESMI:
-- Memisahkan teks naskah murni dari instruksi gaya bicara sehingga instruksi custom tidak pernah ikut terbaca sebagai suara di model 3.8 maupun 2.5.
-- Pembaruan daftar suara dari endpoint resmi beserta pemisahan Mode Suara Bawaan (30 suara) dan Mode Suara Hasil Update.
-
-4. NAVIGASI GESER KIRI/KANAN + KLIK LANGSUNG HALAMAN & LOGIKA TANGGAL REAL-TIME MICROSOFT WORD:
-- Menghapus tombol Halaman Sebelumnya / Berikutnya yang memenuhi layar di Beranda Utama, Pembaca PDF, dan Microsoft Word; navigasi kini jauh lebih simpel dengan geser 1 jari kiri/kanan atau ketuk langsung halaman tujuan.
-- Asisten AI & Template Microsoft Word kini otomatis mengenali Hari, Tanggal, Bulan, dan Tahun real-time untuk dokumen resmi/surat/makalah, namun tidak memaksakan tanggal/tahun pada dokumen bebas seperti novel, cerpen, atau esai.
-- Seluruh tombol di aplikasi bersih dari emoji dan dilengkapi penjelasan aksesibel.
+3. NAVIGASI GESER & KEMBALI BERTAHAP (STEP-BY-STEP BACK):
+- Pemutar audio, video, dan mode baca menggunakan gestur geser 1 jari kiri (-5 detik) / kanan (+5 detik) + SeekBar tanpa tombol Mundur/Maju yang memenuhi layar.
+- Tombol Back di seluruh aplikasi (Studio Gudang, Editor Audio/Video, Beranda 5 Tab, Pembaca PDF, dan Gemini TTS) kini turun bertahap satu tingkat demi satu tingkat, tidak langsung keluar sekaligus.
