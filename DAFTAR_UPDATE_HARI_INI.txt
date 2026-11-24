@@ -1,28 +1,11 @@
-KEYBOARD AI BY ANAS — DAFTAR UPDATE v28.0 (98 MP3 BACKSOUND & EFEK FILM NYATA, PALET KATEGORI + CENTANG ADAPTIF, PINNED KONVERSI KANAN BAWAH & KEMBALI BERTAHAP)
+KEYBOARD AI BY ANAS — DAFTAR UPDATE v29.0 (HOTFIX FATAL DURASI VIDEO/AUDIO PULUHAN JAM DI GEMINI TTS, STATUS WA & MIXER + 98 MP3 NYATA)
 
-Pembaruan Utama Rilis v28.0:
-1. 98 AUDIO MP3 REKAMAN ASLI DI STUDIO GUDANG & LABORATORIUM AUDIO:
-- Menggantikan seluruh suara sintetis lama dengan 98 file MP3 asli beresolusi tinggi dalam 10 kategori lengkap:
-  • Musik Islami, Nasheed & Religi
-  • Musik Audio 3D / 8D Spatial Surround
-  • Musik Piano Santai & Sedih
-  • Musik Jazz & Cafe Klasik
-  • Musik Rock & Energi Action
-  • Musik Jedag-Jedug, Phonk & EDM
-  • Musik Tegang, Horor & Misteri Film
-  • Musik Sinematik Film & Epik
-  • Musik & Efek Kartun, Komedi & Suara Orang Ketawa
-  • Efek Suara Drama & Film (Kaca Pecah, Tabrakan, Ledakan, Tinju, Pedang, Tembakan, Laser, Horor, Petir, Sirine, Whoosh, Tepuk Tangan)
-- Tampilan Laboratorium & Gudang memanjang ke bawah: ketuk nama audio untuk langsung Putar/Jeda, sampingnya Jeda & Hapus, dan tombol Simpan di kanan bawah.
+Pembaruan Mendesak & Perbaikan Fatal Rilis v29.0:
+1. PERBAIKAN FATAL DURASI VIDEO/AUDIO MEMBENGKAK PULUHAN JAM (GEMINI TTS VIDEO, STATUS WA & MIXER):
+- Memperbaiki bug timestamp `presentationTimeUs` pada `AudioToVideoConverter` (`MediaCodec` InputSurface) yang sebelumnya memakai `System.nanoTime()` uptime perangkat sehingga hasil Ekspor Video Utuh maupun potongan Status WhatsApp dari audio 3-4 menit bisa membengkak menjadi 30 jam! Kini seluruh frame video ditulis dengan PTS deterministik mulai dari 00:00 sesuai frame rate dan durasi audio aslinya.
+- Memperbaiki `AudioDspEngine.mixMultiTracks` dan `VideoEditEngine.mixMultiAudioOntoVideo` agar track backsound yang di-loop (`-stream_loop -1`) dibatasi ketat tepat pada durasi audio/video utama (`atrim` + `-t`), sehingga durasi hasil gabungan suara TTS + musik maupun video + musik tetap akurat 100%.
 
-2. STUDIO EFEK DRAMA/FILM & BACKSOUND (PALET KATEGORI + CENTANG INLINE SUPER AKSESIBEL):
-- Pilih Kategori lewat dialog bersih (Seluruh Efek Singkat, Seluruh Backsound Musik, atau per kategori) lalu daftarnya langsung tampil memanjang rapi di 1 ScrollView tunggal tanpa scroll bertumpuk.
-- Efek Singkat tampil super bersih: cukup CheckBox + tombol Putar untuk tes suara sebelum centang di detik target.
-- Backsound Musik: default otomatis masuk dari detik pemutar saat dicentang dan diputar terus sampai akhir; tombol "Tandai Awal", "Tandai Akhir", dan "Sampai Akhir" menempel langsung di baris lagu yang bersangkutan (bukan terpisah di atas layar).
-- Otomatis pre-roll transisi -2 detik untuk mendengar hasil tempelan efek/backsound secara mulus, serta update baris in-place agar fokus TalkBack dan posisi gulir tidak melompat.
-- Tombol "Mulai Konversi Audio" / "Mulai Konversi Video" selalu terkunci di pojok kanan bawah layar (pinned footer bar).
-- Sesi centangan otomatis dibersihkan saat menekan Kembali/Back ke daftar fitur agar tidak terbawa ke sesi berikutnya.
-
-3. NAVIGASI GESER & KEMBALI BERTAHAP (STEP-BY-STEP BACK):
-- Pemutar audio, video, dan mode baca menggunakan gestur geser 1 jari kiri (-5 detik) / kanan (+5 detik) + SeekBar tanpa tombol Mundur/Maju yang memenuhi layar.
-- Tombol Back di seluruh aplikasi (Studio Gudang, Editor Audio/Video, Beranda 5 Tab, Pembaca PDF, dan Gemini TTS) kini turun bertahap satu tingkat demi satu tingkat, tidak langsung keluar sekaligus.
+2. FITUR LENGKAP SEBELUMNYA (v28.0) TETAP HADIR & TERSEMPURNAKAN:
+- 98 audio MP3 rekaman asli di Studio Gudang & Laboratorium Audio (10 kategori lengkap) dengan layout vertikal dan tombol Simpan di kanan bawah.
+- Studio Efek Drama/Film & Backsound dengan pemilih kategori dialog, centang in-place anti-loncat, tombol Tandai Awal/Akhir langsung menempel di baris lagu Backsound, pre-roll transisi -2 detik, pinned footer bar tombol Konversi di pojok kanan bawah, dan reset centangan bersih saat kembali.
+- Navigasi geser kiri/kanan (-5/+5 detik) dan tombol Back bertahap satu tingkat demi satu tingkat di seluruh halaman aplikasi.
