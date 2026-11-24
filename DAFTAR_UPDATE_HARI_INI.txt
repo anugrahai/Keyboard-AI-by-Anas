@@ -3,6 +3,7 @@ KEYBOARD AI BY ANAS — DAFTAR UPDATE v29.0 (HOTFIX FATAL DURASI VIDEO/AUDIO PUL
 Pembaruan Mendesak & Perbaikan Fatal Rilis v29.0:
 1. PERBAIKAN FATAL DURASI VIDEO/AUDIO MEMBENGKAK PULUHAN JAM (GEMINI TTS VIDEO, STATUS WA & MIXER):
 - Memperbaiki bug timestamp `presentationTimeUs` pada `AudioToVideoConverter` (`MediaCodec` InputSurface) yang sebelumnya memakai `System.nanoTime()` uptime perangkat sehingga hasil Ekspor Video Utuh maupun potongan Status WhatsApp dari audio 3-4 menit bisa membengkak menjadi 30 jam! Kini seluruh frame video ditulis dengan PTS deterministik mulai dari 00:00 sesuai frame rate dan durasi audio aslinya.
+- Mengoptimalkan kompresi video Gemini TTS & Status WhatsApp (VBR 200 kbps, 10 FPS, I-frame per 5 detik, AAC 64 kbps) agar ukuran file video 4 menit turun drastis dari ~40 MB menjadi ~6-8 MB namun tetap tajam dan jernih.
 - Memperbaiki `AudioDspEngine.mixMultiTracks` dan `VideoEditEngine.mixMultiAudioOntoVideo` agar track backsound yang di-loop (`-stream_loop -1`) dibatasi ketat tepat pada durasi audio/video utama (`atrim` + `-t`), sehingga durasi hasil gabungan suara TTS + musik maupun video + musik tetap akurat 100%.
 
 2. FITUR LENGKAP SEBELUMNYA (v28.0) TETAP HADIR & TERSEMPURNAKAN:
