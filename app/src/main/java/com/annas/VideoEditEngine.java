@@ -607,12 +607,13 @@ public final class VideoEditEngine {
             fc.append(vtags).append("concat=n=").append(imageUris.size()).append(":v=1:a=0[outv]");
 
             String audioMap = "-an ";
+            double totalSlideSec = Math.max(0.5, imageUris.size() * secPerPhoto);
             if (bgMusicUri != null) {
                 File bg = AudioDspEngine.materializeRawCopyIfContent(ctx, bgMusicUri, workDir, "ss_bgm");
                 if (!"file".equals(bgMusicUri.getScheme())) tmpFiles.add(bg);
                 inputs.append("-stream_loop -1 -i ").append(AudioDspEngine.q(bg)).append(" ");
                 int bgIdx = imageUris.size();
-                audioMap = "-map " + bgIdx + ":a -c:a aac -profile:a aac_low -b:a 112k -shortest ";
+                audioMap = String.format(Locale.US, "-map %d:a -c:a aac -profile:a aac_low -b:a 112k -t %.3f -shortest ", bgIdx, totalSlideSec);
             }
 
             String cmd = "-y " + inputs + "-filter_complex \"" + fc + "\" -map \"[outv]\" " + audioMap

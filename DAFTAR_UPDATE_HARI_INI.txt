@@ -1,10 +1,11 @@
-KEYBOARD AI BY ANAS — DAFTAR UPDATE v31.0 (APK MINI SUPER RAMPING — KOMPRESI 98 AUDIO BACKSOUND KE M4A AAC-LC HEMAT JERNIH)
+KEYBOARD AI BY ANAS — DAFTAR UPDATE v32.0 (HOTFIX MACET 2% KONVERSI VIDEO GEMINI TTS, STATUS WA & AUDIO-KE-VIDEO + PROGRESS REAL-TIME)
 
-Pembaruan Utama Rilis v31.0:
-1. KOMPRESI BESAR-BESARAN UKURAN APK (98 AUDIO GUDANG DARI ~255 MB MENJADI SUPER RAMPING):
-- Mengonversi seluruh 98 koleksi audio Backsound & Efek Drama/Film di `assets/backsound/` ke format M4A / AAC-LC efisien (`40–64 kbps` dengan `-movflags +faststart`) sehingga ukuran APK turun drastis namun kejernihan suara tetap terjaga 100%.
-- Memperbarui `StudioGudangAudioManager` dan `app/build.gradle` (`noCompress += ['mp3', 'm4a']`) agar pemutaran instan dan ekstraksi audio tetap mulus dan kompatibel penuh di seluruh perangkat Android.
+Pembaruan Mendesak & Perbaikan Rilis v32.0:
+1. PERBAIKAN FATAL PROSES KONVERSI VIDEO MACET DI 2% (GEMINI TTS VIDEO, STATUS WA & AUDIO KE VIDEO):
+- Memperbaiki bug FFmpeg `-loop 1` + `overlay` di `AudioToVideoConverter` dan `AudioDspEngine.renderAudioToVideoMp4` yang sebelumnya tidak memiliki batas durasi `-t` pada input `-loop 1` dan `:shortest=1` pada filter `overlay`, sehingga FFmpeg terus merender frame tanpa berhenti meski durasi audio telah selesai.
+- Menambahkan pembatasan durasi deterministik (`-t` pada `-loop 1`, `:shortest=1` pada `overlay`, `:d=` pada sumber `color`, serta `-t` di output) di seluruh pipeline video (`AudioToVideoConverter`, `AudioDspEngine`, dan `VideoEditEngine.renderPhotoSlideshow`).
+- Menambahkan `FFmpegKit.executeAsync` dengan `StatisticsCallback` real-time dan pembatalan instan (`FFmpegKit.cancel`) di `AudioToVideoConverter` agar persentase progress berjalan mulus dari 0% sampai 100% dan tombol Batal langsung menghentikan encoder seketika.
 
-2. SELURUH OPTIMASI KOMPRESI v30.0 TETAP HADIR:
-- Output default Gemini TTS & Mixer Backsound berformat M4A/OPUS/MP3 hemat ukuran (< 1 MB/menit) dengan kualitas jernih seperti ori.
-- Konverter Video TTS & Status WA berbasis FFmpeg `libx264` hemat ukuran (~1 MB/menit) serta preset hemat di Studio Editor Audio & Video Pro.
+2. SELURUH OPTIMASI v31.0 TETAP HADIR:
+- APK mini (~165 MB) dengan 98 koleksi backsound M4A AAC-LC hemat ukuran & kualitas jernih.
+- Output Gemini TTS & Mixer hemat (< 1 MB/menit) serta konverter Video MP4 hemat (~1 MB/menit) dengan suara jernih.

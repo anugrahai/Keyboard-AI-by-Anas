@@ -28,6 +28,8 @@ import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Konverter Audio (M4A/MP3/OPUS/WAV + Musik Latar opsional) -> Video MP4 (H.264 libx264 + AAC-LC)
@@ -185,14 +187,14 @@ public final class AudioToVideoConverter {
                 File outFile = new File(outputDir, fileName);
                 if (outFile.exists()) outFile.delete();
 
-                int pctStart = Math.max(10, Math.min(90, 10 + (part * 80) / Math.max(1, totalParts)));
+                int pctStart = 2;
                 if (listener != null) {
                     listener.onProgress(part + 1, totalParts, pctStart,
                             "Merender Video MP4 Hemat Bagian " + (part + 1) + "/" + totalParts + "...");
                 }
 
                 renderCardTemplatePng(tempCardPng, part + 1, totalParts, fullSingleVideo, partDurSec, scriptPreviewText);
-                encodePartWithFfmpeg(tempCardPng, preparedAudio, outFile, startSec, partDurSec, hasMusic, listener);
+                encodePartWithFfmpeg(tempCardPng, preparedAudio, outFile, startSec, partDurSec, hasMusic, part + 1, totalParts, listener);
 
                 try { outFile.setLastModified(baseTime + (part * 1000L)); } catch (Throwable ignored) {}
                 outFiles.add(outFile);
@@ -267,19 +269,21 @@ public final class AudioToVideoConverter {
             double startSec,
             double partDurSec,
             boolean hasMusic,
+            int partNum,
+            int totalParts,
             ProgressListener listener
     ) throws Exception {
         if (listener != null && listener.isCancelled()) {
             throw new InterruptedException("Konversi video dibatalkan.");
         }
 
-        // Latar kartu teks statis + gelombang suara dinamis (560x110 @ 6 FPS): sangat hemat bitrate namun teks & suara tetap jernih!
+        // WAJIB: -t pada -loop 1 DAN :shortest=1 pada overlay agar FFmpeg pasti berhenti tepat saat durasi klip habis!
         String audioFilter = hasMusic
                 ? "[1:a]asplit=2[aw][ao]"
                 : "[1:a]highpass=f=55,alimiter=limit=0.95,asplit=2[aw][ao]";
         String fc = audioFilter + ";"
                 + "[aw]showwaves=s=560x110:mode=cline:rate=6:colors=0x38BDF8|0x60A5FA[wv];"
-                + "[0:v][wv]overlay=80:880,format=yuv420p[outv]";
+                + "[0:v][wv]overlay=80:880:shortest=1,format=yuv420p[outv]";
 
         String audioArgs = hasMusic
                 ? "-c:a aac -profile:a aac_low -b:a 96k -ar 44100 -ac 2"
@@ -288,15 +292,50 @@ public final class AudioToVideoConverter {
         String ssArg = startSec > 0.01 ? String.format(Locale.US, "-ss %.3f ", startSec) : "";
         String tArg = String.format(Locale.US, "-t %.3f ", partDurSec);
 
-        String cmd = "-y -loop 1 -r 6 -i " + AudioDspEngine.q(cardPng) + " "
+        String cmd = "-y -loop 1 -r 6 " + tArg + "-i " + AudioDspEngine.q(cardPng) + " "
                 + ssArg + tArg + "-i " + AudioDspEngine.q(audioFile) + " "
                 + "-filter_complex \"" + fc + "\" -map \"[outv]\" -map \"[ao]\" "
                 + "-c:v libx264 -preset fast -tune stillimage -crf 28 -maxrate 180k -bufsize 360k -g 30 "
-                + audioArgs + " -shortest -movflags +faststart " + AudioDspEngine.q(outMp4);
+                + audioArgs + " " + tArg + "-shortest -movflags +faststart " + AudioDspEngine.q(outMp4);
 
-        FFmpegSession session = FFmpegKit.execute(cmd);
-        if (!ReturnCode.isSuccess(session.getReturnCode())) {
-            String logs = session.getAllLogsAsString();
+        final CountDownLatch latch = new CountDownLatch(1);
+        final FFmpegSession[] sessionHolder = new FFmpegSession[1];
+        final long[] lastUiMs = {0L};
+        final double totalMs = Math.max(500.0, partDurSec * 1000.0);
+
+        FFmpegSession session = FFmpegKit.executeAsync(
+                cmd,
+                completedSession -> {
+                    sessionHolder[0] = completedSession;
+                    latch.countDown();
+                },
+                null,
+                stats -> {
+                    if (listener == null || stats == null) return;
+                    long now = System.currentTimeMillis();
+                    if (now - lastUiMs[0] < 350L) return;
+                    lastUiMs[0] = now;
+                    int pct = Math.max(3, Math.min(96, (int) Math.round((stats.getTime() / totalMs) * 95.0)));
+                    listener.onProgress(partNum, totalParts, pct,
+                            "Merender Video Bagian " + partNum + "/" + totalParts + " (" + pct + "%)...");
+                }
+        );
+
+        while (!latch.await(250, TimeUnit.MILLISECONDS)) {
+            if (listener != null && listener.isCancelled()) {
+                try { FFmpegKit.cancel(session.getSessionId()); } catch (Throwable ignored) {}
+                try { if (outMp4.exists()) outMp4.delete(); } catch (Throwable ignored) {}
+                throw new InterruptedException("Konversi video dibatalkan.");
+            }
+        }
+
+        FFmpegSession done = sessionHolder[0] != null ? sessionHolder[0] : session;
+        if (listener != null && listener.isCancelled()) {
+            try { if (outMp4.exists()) outMp4.delete(); } catch (Throwable ignored) {}
+            throw new InterruptedException("Konversi video dibatalkan.");
+        }
+        if (!ReturnCode.isSuccess(done.getReturnCode())) {
+            String logs = done.getAllLogsAsString();
             String tail = logs == null ? "FFmpeg error" : logs.substring(Math.max(0, logs.length() - 400));
             throw new IllegalStateException("Gagal merender video MP4: " + tail);
         }

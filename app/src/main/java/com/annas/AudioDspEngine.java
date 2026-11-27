@@ -668,6 +668,9 @@ public final class AudioDspEngine {
             else if ("4:5".equals(aspectRatio)) { outW = 864; outH = 1080; }
 
             int abr = Math.max(64, Math.min(320, audioBitrateKbps));
+            AudioMeta audMeta = inspectMedia(ctx, Uri.fromFile(inAudio));
+            double durSec = audMeta.durationMs > 0 ? (audMeta.durationMs / 1000.0) : 0.0;
+            String durArg = durSec > 0.1 ? String.format(Locale.US, "-t %.3f ", durSec) : "";
 
             if (coverImageUri != null) {
                 inCover = materializeRawCopyIfContent(ctx, coverImageUri, workDir, "a2v_cov");
@@ -680,11 +683,11 @@ public final class AudioDspEngine {
                                     + "[0:v]scale=%d:%d:force_original_aspect_ratio=decrease[fg];"
                                     + "[bg][fg]overlay=(W-w)/2:(H-h)/2[base];"
                                     + "[1:a]showwaves=s=%dx%d:mode=cline:rate=8:colors=0x38BDF8[wv];"
-                                    + "[base][wv]overlay=0:H-%d,format=yuv420p[outv]",
+                                    + "[base][wv]overlay=0:H-%d:shortest=1,format=yuv420p[outv]",
                             outW, outH, outW, outH, outW, outH, outW, waveH, waveH + 24);
-                    String cmd = "-y -loop 1 -r 8 -i " + q(inCover) + " -i " + q(inAudio)
+                    String cmd = "-y -loop 1 -r 8 " + durArg + "-i " + q(inCover) + " -i " + q(inAudio)
                             + " -filter_complex \"" + fc + "\" -map \"[outv]\" -map 1:a "
-                            + "-c:v libx264 -preset fast -crf 27 -g 40 -c:a aac -profile:a aac_low -b:a " + abr + "k -shortest -movflags +faststart "
+                            + "-c:v libx264 -preset fast -crf 27 -g 40 -c:a aac -profile:a aac_low -b:a " + abr + "k " + durArg + "-shortest -movflags +faststart "
                             + q(outMp4);
                     runFfmpegOrThrow(cmd);
                     return;
@@ -692,11 +695,11 @@ public final class AudioDspEngine {
                     vf = String.format(Locale.US,
                             "[0:v]scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,boxblur=20:2[bg];"
                                     + "[0:v]scale=%d:%d:force_original_aspect_ratio=decrease[fg];"
-                                    + "[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p[outv]",
+                                    + "[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1,format=yuv420p[outv]",
                             outW, outH, outW, outH, outW, outH);
-                    String cmd = "-y -loop 1 -r 5 -i " + q(inCover) + " -i " + q(inAudio)
+                    String cmd = "-y -loop 1 -r 5 " + durArg + "-i " + q(inCover) + " -i " + q(inAudio)
                             + " -filter_complex \"" + vf + "\" -map \"[outv]\" -map 1:a "
-                            + "-c:v libx264 -preset fast -tune stillimage -crf 27 -g 25 -c:a aac -profile:a aac_low -b:a " + abr + "k -shortest -movflags +faststart "
+                            + "-c:v libx264 -preset fast -tune stillimage -crf 27 -g 25 -c:a aac -profile:a aac_low -b:a " + abr + "k " + durArg + "-shortest -movflags +faststart "
                             + q(outMp4);
                     runFfmpegOrThrow(cmd);
                     return;
@@ -704,9 +707,9 @@ public final class AudioDspEngine {
                     vf = String.format(Locale.US,
                             "scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:black,setsar=1,format=yuv420p",
                             outW, outH, outW, outH);
-                    String cmd = "-y -loop 1 -r 5 -i " + q(inCover) + " -i " + q(inAudio)
+                    String cmd = "-y -loop 1 -r 5 " + durArg + "-i " + q(inCover) + " -i " + q(inAudio)
                             + " -vf \"" + vf + "\" -c:v libx264 -preset fast -tune stillimage -crf 27 -g 25 "
-                            + "-c:a aac -profile:a aac_low -b:a " + abr + "k -shortest -movflags +faststart " + q(outMp4);
+                            + "-c:a aac -profile:a aac_low -b:a " + abr + "k " + durArg + "-shortest -movflags +faststart " + q(outMp4);
                     runFfmpegOrThrow(cmd);
                     return;
                 }
@@ -715,9 +718,10 @@ public final class AudioDspEngine {
             // Tanpa gambar cover: gunakan Gelombang Suara (Waveform) atau Latar Warna Studio
             if ("solid_dark".equals(visualMode) || "solid_navy".equals(visualMode)) {
                 String hex = "solid_navy".equals(visualMode) ? "0x0F172A" : "0x111111";
+                String colorDur = durSec > 0.1 ? String.format(Locale.US, ":d=%.3f", durSec) : "";
                 String cmd = String.format(Locale.US,
-                        "-y -f lavfi -i color=c=%s:s=%dx%d:r=5 -i %s -c:v libx264 -preset fast -tune stillimage -crf 28 -g 25 -pix_fmt yuv420p -c:a aac -profile:a aac_low -b:a %dk -shortest -movflags +faststart %s",
-                        hex, outW, outH, q(inAudio), abr, q(outMp4));
+                        "-y -f lavfi -i color=c=%s:s=%dx%d:r=5%s -i %s -c:v libx264 -preset fast -tune stillimage -crf 28 -g 25 -pix_fmt yuv420p -c:a aac -profile:a aac_low -b:a %dk %s-shortest -movflags +faststart %s",
+                        hex, outW, outH, colorDur, q(inAudio), abr, durArg, q(outMp4));
                 runFfmpegOrThrow(cmd);
             } else {
                 String fc = String.format(Locale.US,
@@ -725,7 +729,7 @@ public final class AudioDspEngine {
                         outW, outH);
                 String cmd = "-y -i " + q(inAudio)
                         + " -filter_complex \"" + fc + "\" -map \"[outv]\" -map 0:a "
-                        + "-c:v libx264 -preset fast -crf 28 -g 40 -c:a aac -profile:a aac_low -b:a " + Math.min(abr, 128) + "k -shortest -movflags +faststart "
+                        + "-c:v libx264 -preset fast -crf 28 -g 40 -c:a aac -profile:a aac_low -b:a " + Math.min(abr, 128) + "k " + durArg + "-shortest -movflags +faststart "
                         + q(outMp4);
                 runFfmpegOrThrow(cmd);
             }
