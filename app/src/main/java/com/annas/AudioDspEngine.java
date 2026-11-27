@@ -248,7 +248,10 @@ public final class AudioDspEngine {
     }
 
     public static void runFfmpegOrThrow(String cmd) {
-        FFmpegSession session = FFmpegKit.execute(cmd);
+        String finalCmd = (cmd != null && !cmd.contains("-threads"))
+                ? cmd.replaceFirst("^-y\\s+", "-y -threads 0 ")
+                : cmd;
+        FFmpegSession session = FFmpegKit.execute(finalCmd);
         if (!ReturnCode.isSuccess(session.getReturnCode())) {
             String logs = session.getAllLogsAsString();
             String tail = logs == null ? "FFmpeg error" : logs.substring(Math.max(0, logs.length() - 400));
@@ -685,9 +688,9 @@ public final class AudioDspEngine {
                                     + "[1:a]showwaves=s=%dx%d:mode=cline:rate=8:colors=0x38BDF8[wv];"
                                     + "[base][wv]overlay=0:H-%d:shortest=1,format=yuv420p[outv]",
                             outW, outH, outW, outH, outW, outH, outW, waveH, waveH + 24);
-                    String cmd = "-y -loop 1 -r 8 " + durArg + "-i " + q(inCover) + " -i " + q(inAudio)
+                    String cmd = "-y -threads 0 -loop 1 -r 8 " + durArg + "-i " + q(inCover) + " -i " + q(inAudio)
                             + " -filter_complex \"" + fc + "\" -map \"[outv]\" -map 1:a "
-                            + "-c:v libx264 -preset fast -crf 27 -g 40 -c:a aac -profile:a aac_low -b:a " + abr + "k " + durArg + "-shortest -movflags +faststart "
+                            + "-c:v libx264 -preset superfast -tune stillimage -crf 27 -maxrate 220k -bufsize 440k -g 40 -c:a aac -profile:a aac_low -b:a " + abr + "k " + durArg + "-shortest -movflags +faststart "
                             + q(outMp4);
                     runFfmpegOrThrow(cmd);
                     return;
@@ -697,9 +700,9 @@ public final class AudioDspEngine {
                                     + "[0:v]scale=%d:%d:force_original_aspect_ratio=decrease[fg];"
                                     + "[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1,format=yuv420p[outv]",
                             outW, outH, outW, outH, outW, outH);
-                    String cmd = "-y -loop 1 -r 5 " + durArg + "-i " + q(inCover) + " -i " + q(inAudio)
+                    String cmd = "-y -threads 0 -loop 1 -r 5 " + durArg + "-i " + q(inCover) + " -i " + q(inAudio)
                             + " -filter_complex \"" + vf + "\" -map \"[outv]\" -map 1:a "
-                            + "-c:v libx264 -preset fast -tune stillimage -crf 27 -g 25 -c:a aac -profile:a aac_low -b:a " + abr + "k " + durArg + "-shortest -movflags +faststart "
+                            + "-c:v libx264 -preset superfast -tune stillimage -crf 27 -maxrate 200k -bufsize 400k -g 25 -c:a aac -profile:a aac_low -b:a " + abr + "k " + durArg + "-shortest -movflags +faststart "
                             + q(outMp4);
                     runFfmpegOrThrow(cmd);
                     return;
@@ -707,8 +710,8 @@ public final class AudioDspEngine {
                     vf = String.format(Locale.US,
                             "scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:black,setsar=1,format=yuv420p",
                             outW, outH, outW, outH);
-                    String cmd = "-y -loop 1 -r 5 " + durArg + "-i " + q(inCover) + " -i " + q(inAudio)
-                            + " -vf \"" + vf + "\" -c:v libx264 -preset fast -tune stillimage -crf 27 -g 25 "
+                    String cmd = "-y -threads 0 -loop 1 -r 5 " + durArg + "-i " + q(inCover) + " -i " + q(inAudio)
+                            + " -vf \"" + vf + "\" -c:v libx264 -preset superfast -tune stillimage -crf 27 -maxrate 200k -bufsize 400k -g 25 "
                             + "-c:a aac -profile:a aac_low -b:a " + abr + "k " + durArg + "-shortest -movflags +faststart " + q(outMp4);
                     runFfmpegOrThrow(cmd);
                     return;
@@ -720,16 +723,16 @@ public final class AudioDspEngine {
                 String hex = "solid_navy".equals(visualMode) ? "0x0F172A" : "0x111111";
                 String colorDur = durSec > 0.1 ? String.format(Locale.US, ":d=%.3f", durSec) : "";
                 String cmd = String.format(Locale.US,
-                        "-y -f lavfi -i color=c=%s:s=%dx%d:r=5%s -i %s -c:v libx264 -preset fast -tune stillimage -crf 28 -g 25 -pix_fmt yuv420p -c:a aac -profile:a aac_low -b:a %dk %s-shortest -movflags +faststart %s",
+                        "-y -threads 0 -f lavfi -i color=c=%s:s=%dx%d:r=5%s -i %s -c:v libx264 -preset superfast -tune stillimage -crf 28 -maxrate 160k -bufsize 320k -g 25 -pix_fmt yuv420p -c:a aac -profile:a aac_low -b:a %dk %s-shortest -movflags +faststart %s",
                         hex, outW, outH, colorDur, q(inAudio), abr, durArg, q(outMp4));
                 runFfmpegOrThrow(cmd);
             } else {
                 String fc = String.format(Locale.US,
                         "[0:a]showwaves=s=%dx%d:mode=cline:rate=8:colors=0x38BDF8|0xA855F7,format=yuv420p[outv]",
                         outW, outH);
-                String cmd = "-y -i " + q(inAudio)
+                String cmd = "-y -threads 0 -i " + q(inAudio)
                         + " -filter_complex \"" + fc + "\" -map \"[outv]\" -map 0:a "
-                        + "-c:v libx264 -preset fast -crf 28 -g 40 -c:a aac -profile:a aac_low -b:a " + Math.min(abr, 128) + "k " + durArg + "-shortest -movflags +faststart "
+                        + "-c:v libx264 -preset superfast -crf 28 -maxrate 220k -bufsize 440k -g 40 -c:a aac -profile:a aac_low -b:a " + Math.min(abr, 128) + "k " + durArg + "-shortest -movflags +faststart "
                         + q(outMp4);
                 runFfmpegOrThrow(cmd);
             }

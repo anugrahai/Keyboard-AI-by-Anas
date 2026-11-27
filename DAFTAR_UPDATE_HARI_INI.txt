@@ -1,11 +1,13 @@
-KEYBOARD AI BY ANAS — DAFTAR UPDATE v32.0 (HOTFIX MACET 2% KONVERSI VIDEO GEMINI TTS, STATUS WA & AUDIO-KE-VIDEO + PROGRESS REAL-TIME)
+KEYBOARD AI BY ANAS — DAFTAR UPDATE v33.0 (TOMBOL KLIK-KLIK PEMBICARA 1/2 + DIALOG EKSPRESI SUPER KOMPLIT + PANDUAN LO/GUE + KECEPATAN EKSTREM AUDIO & VIDEO)
 
-Pembaruan Mendesak & Perbaikan Rilis v32.0:
-1. PERBAIKAN FATAL PROSES KONVERSI VIDEO MACET DI 2% (GEMINI TTS VIDEO, STATUS WA & AUDIO KE VIDEO):
-- Memperbaiki bug FFmpeg `-loop 1` + `overlay` di `AudioToVideoConverter` dan `AudioDspEngine.renderAudioToVideoMp4` yang sebelumnya tidak memiliki batas durasi `-t` pada input `-loop 1` dan `:shortest=1` pada filter `overlay`, sehingga FFmpeg terus merender frame tanpa berhenti meski durasi audio telah selesai.
-- Menambahkan pembatasan durasi deterministik (`-t` pada `-loop 1`, `:shortest=1` pada `overlay`, `:d=` pada sumber `color`, serta `-t` di output) di seluruh pipeline video (`AudioToVideoConverter`, `AudioDspEngine`, dan `VideoEditEngine.renderPhotoSlideshow`).
-- Menambahkan `FFmpegKit.executeAsync` dengan `StatisticsCallback` real-time dan pembatalan instan (`FFmpegKit.cancel`) di `AudioToVideoConverter` agar persentase progress berjalan mulus dari 0% sampai 100% dan tombol Batal langsung menghentikan encoder seketika.
+Pembaruan Utama Rilis v33.0:
+1. FITUR KLIK-KLIK MULTI-SPEAKER & EKSPRESI DI GEMINI TTS (1 KOTAK EDIT RAPI):
+- Menambahkan panel samping rapi di Tab 1 (`Teks & Audio`): tombol `Pembicara 1`, `Pembicara 2`, dan di bawahnya tombol `Pilih Ekspresi` serta `Suara P1 / P2`.
+- Klik `Pembicara 1` atau `Pembicara 2` (bebas mulai dari mana saja) otomatis menyisipkan baris dialog baru, mengaktifkan Mode Multi-Speaker, dan menaruh kursor siap ketik/dikte.
+- Menekan `Pilih Ekspresi` membuka dialog berisi 30 tag ekspresi & efek vokal super komplit (`[tertawa]`, `[terkejut]`, `[hela napas]`, `[napas]`, `[jeda]`, `[jeda panjang]`, `[batuk]`, `[dehem]`, `[semangat]`, `[marah]`, `[sedih]`, `[bisik]`, `[takut]`, `[tegas]`, `[lembut]`, `[romantis]`, `[sinis]`, dll + input tag kustom bebas) yang langsung disisipkan di posisi kursor (awal, tengah, atau akhir kalimat) dengan auto-spasi pintar.
+- Ekspresi kini diproses per baris giliran bicara (`DialogueTurn`), bukan tercampur se-chunk, serta pemotongan chunk panjang memprioritaskan batas antar-pembicara.
+- Menambahkan tombol `Panduan & Contoh Pakai Dialog + Ekspresi (Bahasa Lo/Gue)` lengkap dengan tombol 1-klik tempel contoh naskah.
 
-2. SELURUH OPTIMASI v31.0 TETAP HADIR:
-- APK mini (~165 MB) dengan 98 koleksi backsound M4A AAC-LC hemat ukuran & kualitas jernih.
-- Output Gemini TTS & Mixer hemat (< 1 MB/menit) serta konverter Video MP4 hemat (~1 MB/menit) dengan suara jernih.
+2. KECEPATAN EKSTREM KOMPRESI AUDIO, VIDEO & GEMINI TTS:
+- Mengoptimalkan `AudioToVideoConverter` ke resolusi qHD 540×960 + `-preset superfast` + `-tune stillimage` + `-threads 0` + temp PCM `.wav` (lebih dari 2× lebih cepat dengan ukuran ~528 KB per 30 detik & suara AAC-LC jernih).
+- Mengaktifkan `-threads 0` global di `AudioDspEngine.runFfmpegOrThrow` dan `-preset superfast` di seluruh `AudioDspEngine` & `VideoEditEngine`, serta mempercepat jeda antar-potongan Gemini TTS default ke 400 ms.

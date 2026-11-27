@@ -185,6 +185,40 @@ public class GeminiTtsActivity extends Activity {
             {"Ratusan Ekspresi Teks", "Otomatis ikuti seluruh ekspresi yang tertulis di kalimat maupun tag [ekspresi] tanpa melafalkan tanda kurungnya."}
     };
 
+    // Katalog Super Komplit Ekspresi & Efek Vokal Siap Klik (Bisa di Awal, Tengah, atau Akhir Kalimat)
+    private static final String[][] QUICK_EXPRESSION_CATALOG = {
+            {"[tertawa]", "Efek Vokal: Tertawa natural / ceria (otomatis ke <laugh>)"},
+            {"[terkejut]", "Efek Vokal: Terkesiap kaget / tersentak (otomatis ke <gasp>)"},
+            {"[hela napas]", "Efek Vokal: Menghela napas panjang / lega (otomatis ke <sigh>)"},
+            {"[napas]", "Efek Vokal: Tarik napas singkat sebelum kalimat (otomatis ke <breath>)"},
+            {"[jeda]", "Efek Vokal: Jeda hening singkat ~0.5 detik (otomatis ke <short pause>)"},
+            {"[jeda panjang]", "Efek Vokal: Jeda hening lebih lama ~1.5 detik (otomatis ke <long pause>)"},
+            {"[batuk]", "Efek Vokal: Batuk ringan / canggung (otomatis ke <cough>)"},
+            {"[dehem]", "Efek Vokal: Berdehem sebelum bicara serius (otomatis ke <throat-clearing>)"},
+            {"[semangat]", "Emosi: Antusias, energik, nada bersemangat"},
+            {"[ceria]", "Emosi: Ramah, tersenyum, nada ceria menyenangkan"},
+            {"[marah]", "Emosi: Geram, tegas keras, nada tinggi konfrontatif"},
+            {"[kesal]", "Emosi: Jengkel, menggerutu, sedikit ketus"},
+            {"[sedih]", "Emosi: Lirih, sendu, penuh rasa kehilangan"},
+            {"[menangis]", "Emosi: Suara bergetar haru menahan tangis"},
+            {"[haru]", "Emosi: Menyentuh hati, hangat penuh empati"},
+            {"[bisik]", "Emosi: Suara berbisik pelan, rahasia, intim"},
+            {"[takut]", "Emosi: Cemas, gugup, sedikit gemetar ketakutan"},
+            {"[panik]", "Emosi: Terburu-buru, tegang, nada cemas cepat"},
+            {"[tegas]", "Emosi: Berwibawa, mantap, meyakinkan"},
+            {"[serius]", "Emosi: Nada fokus formal, berat seperti pembawa berita"},
+            {"[lembut]", "Emosi: Halus, tenang, menenangkan pendengar"},
+            {"[romantis]", "Emosi: Hangat, manis, mendayu mesra"},
+            {"[sinis]", "Emosi: Menyindir datar, sarkastis"},
+            {"[kocak]", "Emosi: Jenaka, santai, playful menghibur"},
+            {"[misterius]", "Emosi: Pelan dalam, horor, penuh teka-teki"},
+            {"[berteriak]", "Emosi: Volume lantang keras seperti berseru"},
+            {"[penasaran]", "Emosi: Nada bertanya ingin tahu tinggi"},
+            {"[bangga]", "Emosi: Puas, percaya diri, penuh kemenangan"},
+            {"[mengantuk]", "Emosi: Lelah, malas, lambat hampir tertidur"},
+            {"[grogi]", "Emosi: Ragu-ragu, salah tingkah, kurang percaya diri"}
+    };
+
     private SharedPreferences prefs;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private volatile boolean cancelRequested = false;
@@ -203,7 +237,7 @@ public class GeminiTtsActivity extends Activity {
     private boolean multiSpeakerMode = false;
     private int chunkCharLimit = 1500;
     private int maxChunksGuard = 8;
-    private int chunkDelayMs = 1500;
+    private int chunkDelayMs = 400;
     private int activeTab = 0;
 
     private int selectedPresetIdx = 0;
@@ -213,9 +247,10 @@ public class GeminiTtsActivity extends Activity {
 
     private LinearLayout tabPanel0, tabPanel1, tabPanel2;
     private Button tabBtn0, tabBtn1, tabBtn2;
-    private TextView metaLabel, statusLabel, keyBadge, modelInfoLabel, voiceInfoLabel, activeStyleBadge;
+    private TextView metaLabel, quickSpeakerLabel, statusLabel, keyBadge, modelInfoLabel, voiceInfoLabel, activeStyleBadge;
     private android.widget.ProgressBar topProgressBar;
     private Button btnModel, btnLanguage, btnVoiceSourceMode, btnVoice1, btnVoice2, btnOutputFormat;
+    private Button btnInsertSp1, btnInsertSp2, btnPickExpression, btnVoiceQuickSwitch;
     private Button btnGenerate, btnPlay, btnSave, btnShare, btnMixBacksoundWav, btnExportFullVideo, btnWaStatusVideo, btnUpdateModels, btnUpdateVoices;
     private String selectedAudioFmt = "m4a";
     private boolean pickMusicForWavMix = false;
@@ -318,7 +353,7 @@ public class GeminiTtsActivity extends Activity {
         multiSpeakerMode = prefs.getBoolean("gtts_multi", false);
         chunkCharLimit = prefs.getInt("gtts_chunk_chars", 1500);
         maxChunksGuard = prefs.getInt("gtts_max_chunks", 8);
-        chunkDelayMs = prefs.getInt("gtts_delay_ms", 1500);
+        chunkDelayMs = prefs.getInt("gtts_delay_ms", 400);
         selectedAudioFmt = normalizeAudioFmt(prefs.getString("gtts_audio_fmt", "m4a"));
         selectedPresetIdx = Math.max(0, Math.min(STYLE_PRESETS.length - 1, prefs.getInt("gtts_preset_idx", 0)));
         try {
@@ -474,22 +509,67 @@ public class GeminiTtsActivity extends Activity {
         topQuickRow.addView(btnQuickStyle);
         inputCard.addView(topQuickRow);
 
+        LinearLayout editorRow = new LinearLayout(this);
+        editorRow.setOrientation(LinearLayout.HORIZONTAL);
+        editorRow.setGravity(Gravity.TOP);
+
         etInputText = new EditText(this);
-        etInputText.setHint("Tulis atau tempel naskah di sini...\nBisa sisipkan tag ekspresi seperti [marah], [sedih], [bisik], [tertawa], [terkejut] atau cukup tulis kalimat ekspresif.\n\nMode Multi-Speaker:\n"
-                + speaker1Name + ": Halo apa kabar?\n" + speaker2Name + ": Baik sekali.");
+        etInputText.setHint("Tulis atau tempel naskah di sini...\nKlik tombol Pembicara 1 / Pembicara 2 di samping, lalu pilih Ekspresi di bawahnya — spasi & format otomatis rapi!\n\nContoh:\n"
+                + speaker1Name + ": [tertawa] Halo apa kabar?\n" + speaker2Name + ": Baik sekali, yuk ngobrol!");
         etInputText.setTextColor(txt);
         etInputText.setHintTextColor(muted);
         etInputText.setBackground(UiKit.roundedBox(bg, border, UiKit.dp(this, 10), UiKit.dp(this, 1)));
         etInputText.setPadding(p, p, p, p);
-        etInputText.setMinLines(7);
+        etInputText.setMinLines(8);
         etInputText.setGravity(Gravity.TOP | Gravity.START);
-        inputCard.addView(etInputText);
+        LinearLayout.LayoutParams etLp = new LinearLayout.LayoutParams(0, -2, 1f);
+        editorRow.addView(etInputText, etLp);
+
+        // Panel samping rapi: Pembicara 1, Pembicara 2, di bawahnya Pilih Ekspresi & Suara P1/P2
+        LinearLayout sidePanel = new LinearLayout(this);
+        sidePanel.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams sideLp = new LinearLayout.LayoutParams(UiKit.dp(this, 118), -2);
+        sideLp.leftMargin = UiKit.dp(this, 6);
+
+        btnInsertSp1 = makeCompactSideButton("Pembicara 1",
+                "Sisipkan baris " + speaker1Name + " dan aktifkan mode Multi-Speaker",
+                UiKit.ACCENT_OFFICE, v -> insertSpeakerPrefix(1));
+        btnInsertSp2 = makeCompactSideButton("Pembicara 2",
+                "Sisipkan baris " + speaker2Name + " dan aktifkan mode Multi-Speaker",
+                UiKit.ACCENT_KB_ALT, v -> insertSpeakerPrefix(2));
+        btnPickExpression = makeCompactSideButton("Pilih Ekspresi",
+                "Buka daftar lengkap ekspresi & efek vokal untuk disisipkan tepat di posisi kursor",
+                UiKit.ACCENT_AI, v -> showExpressionPickerDialog());
+        btnVoiceQuickSwitch = makeCompactSideButton("Suara P1 / P2",
+                "Sesuaikan suara untuk Pembicara 1 dan Pembicara 2 langsung dari sini",
+                UiKit.ACCENT_SYSTEM, v -> showQuickVoiceAdjustDialog());
+
+        sidePanel.addView(btnInsertSp1);
+        sidePanel.addView(btnInsertSp2);
+        sidePanel.addView(btnPickExpression);
+        sidePanel.addView(btnVoiceQuickSwitch);
+        editorRow.addView(sidePanel, sideLp);
+        inputCard.addView(editorRow);
+
+        quickSpeakerLabel = new TextView(this);
+        quickSpeakerLabel.setTextColor(UiKit.ACCENT_KB_ALT);
+        quickSpeakerLabel.setTextSize(12);
+        quickSpeakerLabel.setPadding(0, UiKit.dp(this, 6), 0, 0);
+        inputCard.addView(quickSpeakerLabel);
 
         metaLabel = new TextView(this);
         metaLabel.setTextColor(muted);
         metaLabel.setTextSize(12);
-        metaLabel.setPadding(0, UiKit.dp(this, 6), 0, 0);
+        metaLabel.setPadding(0, UiKit.dp(this, 2), 0, UiKit.dp(this, 6));
         inputCard.addView(metaLabel);
+
+        Button btnTutorial = new Button(this);
+        btnTutorial.setText("Panduan & Contoh Pakai Dialog + Ekspresi (Bahasa Lo/Gue)");
+        btnTutorial.setContentDescription("Buka tutorial langkah demi langkah cara mudah pakai tombol Pembicara 1, Pembicara 2, Pilih Ekspresi, beserta contoh naskah siap tempel");
+        UiKit.styleButton(this, btnTutorial, UiKit.ACCENT_KB);
+        btnTutorial.setOnClickListener(v -> showTutorialDialog());
+        inputCard.addView(btnTutorial);
+
         etInputText.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
@@ -942,6 +1022,10 @@ public class GeminiTtsActivity extends Activity {
         }
         if (btnVoice1 != null) btnVoice1.setText("Suara Pembicara 1: " + getActiveVoice(1));
         if (btnVoice2 != null) btnVoice2.setText("Suara Pembicara 2: " + getActiveVoice(2));
+        if (quickSpeakerLabel != null) {
+            quickSpeakerLabel.setText("Suara Aktif: P1 (" + speaker1Name + ") = " + getActiveVoice(1)
+                    + "  |  P2 (" + speaker2Name + ") = " + getActiveVoice(2));
+        }
         updateActiveStyleBadge();
     }
 
@@ -1315,7 +1399,7 @@ public class GeminiTtsActivity extends Activity {
 
     private void updateMeta() {
         String raw = etInputText.getText() == null ? "" : etInputText.getText().toString();
-        List<String> chunks = splitIntoSafeChunks(raw, chunkCharLimit);
+        List<String> chunks = splitIntoSafeChunks(raw, chunkCharLimit, multiSpeakerMode, speaker1Name, speaker2Name);
         int count = chunks.size();
         String warn = count > maxChunksGuard ? (" | Melebihi batas " + maxChunksGuard + " potongan (dipotong aman)") : "";
         String info = "Panjang: " + raw.length() + " kar. | Estimasi: " + count + " potongan (maks " + maxChunksGuard + ")" + warn;
@@ -1498,7 +1582,195 @@ public class GeminiTtsActivity extends Activity {
                     if (!s2.isEmpty()) speaker2Name = s2;
                     cbMultiSpeaker.setText("Mode Multi-Speaker (2 Pembicara: " + speaker1Name + " dan " + speaker2Name + ")");
                     saveSettings();
+                    refreshVoiceModeUi();
                 }).show();
+    }
+
+    private Button makeCompactSideButton(String text, String a11yDesc, int accentColor, View.OnClickListener onClick) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setContentDescription(a11yDesc);
+        b.setAllCaps(false);
+        b.setTextSize(12.5f);
+        b.setTypeface(null, Typeface.BOLD);
+        b.setTextColor(Color.WHITE);
+        b.setPadding(UiKit.dp(this, 8), UiKit.dp(this, 10), UiKit.dp(this, 8), UiKit.dp(this, 10));
+        b.setBackground(UiKit.roundedBox(accentColor, Color.TRANSPARENT, UiKit.dp(this, 10), 0));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.bottomMargin = UiKit.dp(this, 6);
+        b.setLayoutParams(lp);
+        b.setOnClickListener(onClick);
+        return b;
+    }
+
+    /** Menyisipkan prefix Pembicara 1 / Pembicara 2 dengan spasi dan baris baru otomatis, serta mengaktifkan Multi-Speaker. */
+    private void insertSpeakerPrefix(int slot) {
+        if (etInputText == null || etInputText.getText() == null) return;
+        if (!multiSpeakerMode) {
+            multiSpeakerMode = true;
+            if (cbMultiSpeaker != null) cbMultiSpeaker.setChecked(true);
+            if (btnVoice2 != null) btnVoice2.setVisibility(View.VISIBLE);
+            saveSettings();
+            updateActiveStyleBadge();
+        }
+        String spName = (slot == 2) ? speaker2Name : speaker1Name;
+        Editable ed = etInputText.getText();
+        int start = Math.max(0, Math.min(etInputText.getSelectionStart(), ed.length()));
+        int end = Math.max(0, Math.min(etInputText.getSelectionEnd(), ed.length()));
+        if (start > end) { int t = start; start = end; end = t; }
+
+        String before = ed.subSequence(0, start).toString();
+        String needLeadNl = "";
+        if (!before.isEmpty() && !before.endsWith("\n")) {
+            needLeadNl = "\n";
+        }
+        String after = ed.subSequence(end, ed.length()).toString();
+        String needTrailNl = (!after.isEmpty() && !after.startsWith("\n")) ? "\n" : "";
+
+        String insert = needLeadNl + spName + ": " + needTrailNl;
+        ed.replace(start, end, insert);
+        int newCursor = start + needLeadNl.length() + spName.length() + 2;
+        etInputText.setSelection(Math.min(ed.length(), newCursor));
+        etInputText.requestFocus();
+        OfficeUtils.announce(etInputText, spName + " disisipkan, suara " + getActiveVoice(slot));
+    }
+
+    /** Membuka dialog daftar ekspresi super komplit & memasukkan tag [ekspresi] di posisi kursor dengan auto-spasi pintar. */
+    private void showExpressionPickerDialog() {
+        final String[] labels = new String[QUICK_EXPRESSION_CATALOG.length + 1];
+        for (int i = 0; i < QUICK_EXPRESSION_CATALOG.length; i++) {
+            labels[i] = QUICK_EXPRESSION_CATALOG[i][0] + " — " + QUICK_EXPRESSION_CATALOG[i][1];
+        }
+        labels[QUICK_EXPRESSION_CATALOG.length] = "+ Tulis Tag Ekspresi Bebas Sendiri...";
+
+        UiKit.dialog(this, prefs)
+                .setTitle("Pilih Ekspresi & Efek Suara (Sisip di Posisi Kursor)")
+                .setItems(labels, (d, which) -> {
+                    if (which < QUICK_EXPRESSION_CATALOG.length) {
+                        insertExpressionTagAtCursor(QUICK_EXPRESSION_CATALOG[which][0]);
+                    } else {
+                        EditText edCustom = new EditText(this);
+                        edCustom.setHint("Mis. berbisik pelan, logat betawi, ketawa ngakak");
+                        UiKit.styleEditText(this, edCustom, prefs);
+                        UiKit.dialog(this, prefs)
+                                .setTitle("Tulis Tag Ekspresi Sendiri")
+                                .setView(edCustom)
+                                .setNegativeButton("Batal", null)
+                                .setPositiveButton("Sisipkan", (d2, w2) -> {
+                                    String raw = edCustom.getText().toString().trim()
+                                            .replace("[", "").replace("]", "");
+                                    if (!raw.isEmpty()) insertExpressionTagAtCursor("[" + raw + "]");
+                                })
+                                .show();
+                    }
+                })
+                .setNegativeButton("Tutup", null)
+                .show();
+    }
+
+    /** Menyisipkan tag [ekspresi] di awal, tengah, atau akhir kalimat tanpa merusak spasi kata sebelah. */
+    private void insertExpressionTagAtCursor(String tag) {
+        if (etInputText == null || etInputText.getText() == null || tag == null) return;
+        Editable ed = etInputText.getText();
+        int len = ed.length();
+        int start = Math.max(0, Math.min(etInputText.getSelectionStart(), len));
+        int end = Math.max(0, Math.min(etInputText.getSelectionEnd(), len));
+        if (start > end) { int t = start; start = end; end = t; }
+
+        boolean needLeadSpace = false;
+        if (start > 0) {
+            char prev = ed.charAt(start - 1);
+            if (!Character.isWhitespace(prev)) needLeadSpace = true;
+        }
+        boolean needTrailSpace = true;
+        if (end < len && Character.isWhitespace(ed.charAt(end))) {
+            needTrailSpace = false;
+        }
+
+        String insert = (needLeadSpace ? " " : "") + tag + (needTrailSpace ? " " : "");
+        ed.replace(start, end, insert);
+        int newCursor = start + insert.length() + (needTrailSpace ? 0 : 1);
+        etInputText.setSelection(Math.min(ed.length(), newCursor));
+        etInputText.requestFocus();
+        OfficeUtils.announce(etInputText, "Ekspresi " + tag + " disisipkan");
+    }
+
+    /** Dialog ringkas untuk menyesuaikan suara Pembicara 1 dan Pembicara 2 langsung dari Tab 1. */
+    private void showQuickVoiceAdjustDialog() {
+        String[] items = {
+                "Ubah Suara Pembicara 1 (" + speaker1Name + " -> " + getActiveVoice(1) + ")",
+                "Ubah Suara Pembicara 2 (" + speaker2Name + " -> " + getActiveVoice(2) + ")",
+                "Ubah Nama Pembicara (" + speaker1Name + " & " + speaker2Name + ")"
+        };
+        UiKit.dialog(this, prefs)
+                .setTitle("Sesuaikan Suara Masing-Masing Pembicara")
+                .setItems(items, (d, which) -> {
+                    if (which == 0) pickVoice(1);
+                    else if (which == 1) pickVoice(2);
+                    else editSpeakerNames();
+                })
+                .setNegativeButton("Tutup", null)
+                .show();
+    }
+
+    /** Panduan tutorial lengkap cara memakai tombol Pembicara 1/2 & Pilih Ekspresi dalam bahasa santai lo/gue. */
+    private void showTutorialDialog() {
+        final String sampleScript =
+                speaker1Name + ": [tertawa] Eh bro, lu udah cobain fitur Gemini TTS versi terbaru belum?\n"
+                        + speaker2Name + ": [terkejut] Seriusan udah ada tombol klik-klik buat dialog sama ekspresi?\n"
+                        + speaker1Name + ": [semangat] Iyalah! Gue barusan tinggal pencet tombol Pembicara satu, ngetik biasa, terus klik Pilih Ekspresi tanpa pusing mikirin spasi!\n"
+                        + speaker2Name + ": [hela napas] Gila sih, praktis banget! [bisik] Eh jangan bilang siapa-siapa, suaranya juga tetap bening meski ukuran filenya mini!";
+
+        String tutorialText =
+                "PANDUAN SUPER GAMPANG GEMINI TTS DIALOG & EKSPRESI\n"
+                        + "=================================================\n\n"
+                        + "Buat lu yang males ngetik format Pembicara1: atau kurung siku manual, sekarang semuanya tinggal klik-klik aja bro!\n\n"
+                        + "1. PILIH SIAPA YANG NGOMONG DULUAN (BEBAS):\n"
+                        + "• Di sebelah kanan kotak teks ada tombol 'Pembicara 1' dan 'Pembicara 2'.\n"
+                        + "• Lu bebas mulai dari siapa aja (misal klik 'Pembicara 2' dulu atau 'Pembicara 1' dulu).\n"
+                        + "• Begitu diklik, sistem otomatis bikin baris baru, ngetik 'Pembicara1: ', ngaktifin Mode Multi-Speaker, dan naro kursor siap ketik atau dikte suara!\n\n"
+                        + "2. TULIS KALIMAT + TAMBAH EKSPRESI DI MANA AJA (TANPA RIBET SPASI):\n"
+                        + "• Ketik atau dikte kalimat lu (misal: 'halo apa kabar').\n"
+                        + "• Mau taruh ekspresi di AWAL ('[tertawa] halo apa kabar'), di TENGAH ('halo [tertawa] apa kabar'), atau di AKHIR ('halo apa kabar [tertawa]') — SEMUANYA BISA!\n"
+                        + "• Taruh aja kursor di posisi yang lu mau (nggak usah dikasih spasi dulu nggak masalah), lalu tekan tombol 'Pilih Ekspresi' tepat di bawah tombol Pembicara 2.\n"
+                        + "• Tinggal klik ekspresi yang lu mau (misal [tertawa], [terkejut], [hela napas], [marah], [sedih], [bisik], [jeda]), dia otomatis rapihin spasi kiri-kanan dan menyesuaikan parameter ke Gemini TTS!\n\n"
+                        + "3. GANTI-GANTI PEMBICARA & ATUR SUARA MASING-MASING:\n"
+                        + "• Kalau Pembicara 1 udah selesai ngomong, langsung klik tombol 'Pembicara 2' buat gantian!\n"
+                        + "• Mau ganti suara Pembicara 1 (misal cewek) dan Pembicara 2 (misal cowok)? Klik tombol 'Suara P1 / P2' tepat di bawah Pilih Ekspresi, jadi nggak usah bolak-balik pindah tab.\n\n"
+                        + "4. BEDANYA EFEK VOKAL vs NUANSA EMOSI:\n"
+                        + "• Efek Vokal ([tertawa], [terkejut], [hela napas], [jeda], [jeda panjang], [batuk], [dehem], [napas]): bakal keluar suara tawa/napas/jeda persis di titik lu naruh tag-nya.\n"
+                        + "• Nuansa Emosi ([semangat], [marah], [sedih], [bisik], [takut], [tegas], [lembut], [sinis], dll): ngubah nada & akting bicara di baris pembicara itu sendiri (nggak bocor ke pembicara sebelah).\n\n"
+                        + "5. CONTOH NASKAH SIAP COBA:\n"
+                        + sampleScript;
+
+        ScrollView sv = new ScrollView(this);
+        TextView tv = new TextView(this);
+        int p = UiKit.dp(this, 16);
+        tv.setPadding(p, p, p, p);
+        tv.setText(tutorialText);
+        tv.setTextSize(13.5f);
+        tv.setTextColor(UiKit.textPrimary(prefs));
+        sv.addView(tv);
+
+        UiKit.dialog(this, prefs)
+                .setTitle("Cara Pakai Cepat Dialog & Ekspresi")
+                .setView(sv)
+                .setNegativeButton("Tutup", null)
+                .setPositiveButton("Tempel Contoh ke Kotak Teks", (d, w) -> {
+                    if (etInputText != null) {
+                        etInputText.setText(sampleScript);
+                        etInputText.setSelection(sampleScript.length());
+                    }
+                    if (!multiSpeakerMode) {
+                        multiSpeakerMode = true;
+                        if (cbMultiSpeaker != null) cbMultiSpeaker.setChecked(true);
+                        if (btnVoice2 != null) btnVoice2.setVisibility(View.VISIBLE);
+                        saveSettings();
+                        updateActiveStyleBadge();
+                    }
+                    Toast.makeText(this, "Contoh dialog ditempel! Tinggal tekan Konversi ke Audio.", Toast.LENGTH_LONG).show();
+                })
+                .show();
     }
 
     private void showLimitGuardDialog() {
@@ -1522,7 +1794,7 @@ public class GeminiTtsActivity extends Activity {
         UiKit.styleEditText(this, eMax, prefs);
         box.addView(eMax);
 
-        TextView l3 = new TextView(this); l3.setText("Jeda antar request (ms, contoh 1500 = 1,5 detik):"); l3.setTextColor(txt); box.addView(l3);
+        TextView l3 = new TextView(this); l3.setText("Jeda antar request (ms, default cepat 400 ms):"); l3.setTextColor(txt); box.addView(l3);
         EditText eDelay = new EditText(this);
         eDelay.setInputType(InputType.TYPE_CLASS_NUMBER);
         eDelay.setText(String.valueOf(chunkDelayMs));
@@ -1537,7 +1809,7 @@ public class GeminiTtsActivity extends Activity {
                     try {
                         chunkCharLimit = Math.max(300, Math.min(4000, Integer.parseInt(eChars.getText().toString().trim())));
                         maxChunksGuard = Math.max(1, Math.min(50, Integer.parseInt(eMax.getText().toString().trim())));
-                        chunkDelayMs = Math.max(500, Math.min(10000, Integer.parseInt(eDelay.getText().toString().trim())));
+                        chunkDelayMs = Math.max(200, Math.min(10000, Integer.parseInt(eDelay.getText().toString().trim())));
                         saveSettings();
                         updateMeta();
                         Toast.makeText(this, "Pengaturan batas limit disimpan.", Toast.LENGTH_SHORT).show();
@@ -1592,11 +1864,23 @@ public class GeminiTtsActivity extends Activity {
                 : "";
         final String fullDirective = (langDirective + stylePrompt + (exprRule.isEmpty() ? "" : "\n" + exprRule)).trim();
 
+        // Deteksi otomatis jika naskah berisi dialog 2 pembicara agar suara P1 & P2 tidak tertukar jadi 1 suara
+        String lowerRaw = rawText.toLowerCase(Locale.ROOT);
+        if (!multiSpeakerMode
+                && lowerRaw.contains(speaker1Name.toLowerCase(Locale.ROOT) + ":")
+                && lowerRaw.contains(speaker2Name.toLowerCase(Locale.ROOT) + ":")) {
+            multiSpeakerMode = true;
+            if (cbMultiSpeaker != null) cbMultiSpeaker.setChecked(true);
+            if (btnVoice2 != null) btnVoice2.setVisibility(View.VISIBLE);
+            saveSettings();
+            updateActiveStyleBadge();
+        }
+
         if (cbUseAppLogic.isChecked() && !multiSpeakerMode) {
             rawText = HumanSpeechNormalizer.normalizeForDocumentTts(rawText);
         }
 
-        final List<String> allChunks = splitIntoSafeChunks(rawText, chunkCharLimit);
+        final List<String> allChunks = splitIntoSafeChunks(rawText, chunkCharLimit, multiSpeakerMode, speaker1Name, speaker2Name);
         final int totalToRun = Math.min(allChunks.size(), maxChunksGuard);
         final int totalChars = rawText.length();
         final String activeV1 = getActiveVoice(1);
@@ -1811,6 +2095,8 @@ public class GeminiTtsActivity extends Activity {
         }
         // Hapus semua tag kurung siku lainnya seperti [marah], [sedih], [bisik], [tegas] dari naskah agar tidak ikut dieja
         t = t.replaceAll("\\[[^\\]\\n]{1,60}\\]", " ");
+        // Pastikan tag vokal <...> selalu punya spasi bersih kiri-kanan meski user mengetik tanpa spasi
+        t = t.replaceAll("\\s*(<[a-z\\- ]{2,25}>)\\s*", " $1 ");
         t = t.replaceAll("[ \\t]{2,}", " ").trim();
         return t;
     }
@@ -1855,9 +2141,11 @@ public class GeminiTtsActivity extends Activity {
     private static final class DialogueTurn {
         final String speaker;
         final String text;
-        DialogueTurn(String speaker, String text) {
+        final String rawText;
+        DialogueTurn(String speaker, String text, String rawText) {
             this.speaker = speaker;
             this.text = text;
+            this.rawText = rawText;
         }
     }
 
@@ -1875,16 +2163,18 @@ public class GeminiTtsActivity extends Activity {
             String lower = trimmed.toLowerCase(Locale.ROOT);
             if (lower.startsWith(sp1Prefix)) {
                 if (currentText.length() > 0) {
-                    String clean = stripAllStageDirectionTags(currentText.toString(), allowAngleTags);
-                    if (!clean.isEmpty()) turns.add(new DialogueTurn(currentSpeaker, clean));
+                    String rawTurn = currentText.toString();
+                    String clean = stripAllStageDirectionTags(rawTurn, allowAngleTags);
+                    if (!clean.isEmpty()) turns.add(new DialogueTurn(currentSpeaker, clean, rawTurn));
                     currentText.setLength(0);
                 }
                 currentSpeaker = speaker1Name;
                 currentText.append(trimmed.substring(sp1Prefix.length()).trim());
             } else if (lower.startsWith(sp2Prefix)) {
                 if (currentText.length() > 0) {
-                    String clean = stripAllStageDirectionTags(currentText.toString(), allowAngleTags);
-                    if (!clean.isEmpty()) turns.add(new DialogueTurn(currentSpeaker, clean));
+                    String rawTurn = currentText.toString();
+                    String clean = stripAllStageDirectionTags(rawTurn, allowAngleTags);
+                    if (!clean.isEmpty()) turns.add(new DialogueTurn(currentSpeaker, clean, rawTurn));
                     currentText.setLength(0);
                 }
                 currentSpeaker = speaker2Name;
@@ -1895,12 +2185,13 @@ public class GeminiTtsActivity extends Activity {
             }
         }
         if (currentText.length() > 0) {
-            String clean = stripAllStageDirectionTags(currentText.toString(), allowAngleTags);
-            if (!clean.isEmpty()) turns.add(new DialogueTurn(currentSpeaker, clean));
+            String rawTurn = currentText.toString();
+            String clean = stripAllStageDirectionTags(rawTurn, allowAngleTags);
+            if (!clean.isEmpty()) turns.add(new DialogueTurn(currentSpeaker, clean, rawTurn));
         }
         if (turns.isEmpty()) {
             String clean = stripAllStageDirectionTags(rawChunk, allowAngleTags);
-            if (!clean.isEmpty()) turns.add(new DialogueTurn(speaker1Name, clean));
+            if (!clean.isEmpty()) turns.add(new DialogueTurn(speaker1Name, clean, rawChunk));
         }
         return turns;
     }
@@ -1949,6 +2240,8 @@ public class GeminiTtsActivity extends Activity {
         JSONArray contentArr = new JSONArray();
 
         if (multiSpeakerMode) {
+            String stylePromptOnly = etStylePrompt != null && etStylePrompt.getText() != null
+                    ? etStylePrompt.getText().toString().trim() : "";
             List<DialogueTurn> turns = parseMultiSpeakerTurns(rawChunk, allowAngleTags);
             for (DialogueTurn turn : turns) {
                 JSONObject item = new JSONObject();
@@ -1957,7 +2250,9 @@ public class GeminiTtsActivity extends Activity {
                 JSONObject meta = new JSONObject();
                 meta.put("type", "speech_metadata");
                 meta.put("speaker", turn.speaker);
-                if (!cleanStyleMeta.isEmpty()) meta.put("style", cleanStyleMeta);
+                String turnEmotions = extractInlineBracketEmotions(turn.rawText);
+                String turnStyle = buildCleanStyleMetadata(stylePromptOnly, turnEmotions);
+                if (!turnStyle.isEmpty()) meta.put("style", turnStyle);
                 item.put("annotations", new JSONArray().put(meta));
                 contentArr.put(item);
             }
@@ -2009,13 +2304,17 @@ public class GeminiTtsActivity extends Activity {
 
         JSONArray partsArr = new JSONArray();
         if (multiSpeakerMode && attachSpeechMetadataOnParts) {
+            String stylePromptOnly = etStylePrompt != null && etStylePrompt.getText() != null
+                    ? etStylePrompt.getText().toString().trim() : "";
             List<DialogueTurn> turns = parseMultiSpeakerTurns(rawChunk, allowAngleTags);
             for (DialogueTurn turn : turns) {
                 JSONObject part = new JSONObject();
                 part.put("text", turn.text);
                 JSONObject meta = new JSONObject();
                 meta.put("speaker", turn.speaker);
-                if (!cleanStyleMeta.isEmpty()) meta.put("style", cleanStyleMeta);
+                String turnEmotions = extractInlineBracketEmotions(turn.rawText);
+                String turnStyle = buildCleanStyleMetadata(stylePromptOnly, turnEmotions);
+                if (!turnStyle.isEmpty()) meta.put("style", turnStyle);
                 part.put("speech_metadata", meta);
                 partsArr.put(part);
             }
@@ -2156,19 +2455,35 @@ public class GeminiTtsActivity extends Activity {
         return decoded;
     }
 
-    private static List<String> splitIntoSafeChunks(String text, int maxLen) {
+    private static List<String> splitIntoSafeChunks(
+            String text, int maxLen, boolean multiSpeaker, String sp1Name, String sp2Name
+    ) {
         List<String> out = new ArrayList<>();
         if (text == null) return out;
         String clean = text.trim();
         if (clean.isEmpty()) return out;
+        String p1 = ("\n" + (sp1Name == null ? "Pembicara1" : sp1Name) + ":").toLowerCase(Locale.ROOT);
+        String p2 = ("\n" + (sp2Name == null ? "Pembicara2" : sp2Name) + ":").toLowerCase(Locale.ROOT);
+        String cleanLow = clean.toLowerCase(Locale.ROOT);
         int pos = 0;
         while (pos < clean.length()) {
             int end = Math.min(clean.length(), pos + maxLen);
             if (end < clean.length()) {
-                int nl = clean.lastIndexOf('\n', end);
-                int dot = clean.lastIndexOf('.', end);
-                int cut = Math.max(nl, dot);
-                if (cut > pos + maxLen / 3) end = cut + 1;
+                int cut = -1;
+                if (multiSpeaker) {
+                    int s1 = cleanLow.lastIndexOf(p1, end);
+                    int s2 = cleanLow.lastIndexOf(p2, end);
+                    int spCut = Math.max(s1, s2);
+                    if (spCut > pos + maxLen / 4) cut = spCut + 1;
+                }
+                if (cut < 0) {
+                    int nl = clean.lastIndexOf('\n', end);
+                    int dot = clean.lastIndexOf('.', end);
+                    cut = Math.max(nl, dot);
+                    if (cut > pos + maxLen / 3) cut = cut + 1;
+                    else cut = -1;
+                }
+                if (cut > pos) end = cut;
             }
             String sub = clean.substring(pos, end).trim();
             if (!sub.isEmpty()) out.add(sub);

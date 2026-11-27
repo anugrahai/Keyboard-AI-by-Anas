@@ -189,8 +189,8 @@ public final class VideoEditEngine {
                         AudioDspEngine.formatSecForFfmpeg(cutStartMs), AudioDspEngine.formatSecForFfmpeg(cutEndMs));
                 mapArgs = "-map \"[outv]\" -an ";
             }
-            String cmd = "-y -i " + AudioDspEngine.q(inFile) + " -filter_complex \"" + fc + "\" "
-                    + mapArgs + "-c:v libx264 -preset fast -crf 25 -pix_fmt yuv420p -movflags +faststart "
+            String cmd = "-y -threads 0 -i " + AudioDspEngine.q(inFile) + " -filter_complex \"" + fc + "\" "
+                    + mapArgs + "-c:v libx264 -preset superfast -crf 25 -pix_fmt yuv420p -movflags +faststart "
                     + AudioDspEngine.q(outMp4);
             AudioDspEngine.runFfmpegOrThrow(cmd);
         } finally {
@@ -278,8 +278,8 @@ public final class VideoEditEngine {
                 tags.append("[v").append(i).append("][a").append(i).append("]");
             }
             fc.append(tags).append("concat=n=").append(files.size()).append(":v=1:a=1[outv][outa]");
-            String cmd = "-y " + inputs + "-filter_complex \"" + fc + "\" -map \"[outv]\" -map \"[outa]\" "
-                    + "-c:v libx264 -preset fast -crf 25 -c:a aac -profile:a aac_low -b:a 112k -movflags +faststart "
+            String cmd = "-y -threads 0 " + inputs + "-filter_complex \"" + fc + "\" -map \"[outv]\" -map \"[outa]\" "
+                    + "-c:v libx264 -preset superfast -crf 25 -c:a aac -profile:a aac_low -b:a 112k -movflags +faststart "
                     + AudioDspEngine.q(outMp4);
             AudioDspEngine.runFfmpegOrThrow(cmd);
         } finally {
@@ -498,8 +498,8 @@ public final class VideoEditEngine {
                 mapAudio = "-an ";
             }
 
-            String cmd = "-y " + inputs + "-filter_complex \"" + fc + "\" -map \"[outv]\" " + mapAudio
-                    + "-c:v libx264 -preset fast -crf " + opts.crf + " -movflags +faststart "
+            String cmd = "-y -threads 0 " + inputs + "-filter_complex \"" + fc + "\" -map \"[outv]\" " + mapAudio
+                    + "-c:v libx264 -preset superfast -crf " + opts.crf + " -movflags +faststart "
                     + AudioDspEngine.q(outMp4);
             AudioDspEngine.runFfmpegOrThrow(cmd);
         } finally {
@@ -616,8 +616,8 @@ public final class VideoEditEngine {
                 audioMap = String.format(Locale.US, "-map %d:a -c:a aac -profile:a aac_low -b:a 112k -t %.3f -shortest ", bgIdx, totalSlideSec);
             }
 
-            String cmd = "-y " + inputs + "-filter_complex \"" + fc + "\" -map \"[outv]\" " + audioMap
-                    + "-c:v libx264 -preset fast -tune stillimage -crf 26 -pix_fmt yuv420p -movflags +faststart "
+            String cmd = "-y -threads 0 " + inputs + "-filter_complex \"" + fc + "\" -map \"[outv]\" " + audioMap
+                    + "-c:v libx264 -preset superfast -tune stillimage -crf 26 -pix_fmt yuv420p -movflags +faststart "
                     + AudioDspEngine.q(outMp4);
             AudioDspEngine.runFfmpegOrThrow(cmd);
         } finally {
@@ -797,9 +797,9 @@ public final class VideoEditEngine {
                                 + "[1:a]aresample=44100:async=1,aformat=sample_fmts=fltp:channel_layouts=stereo[a1];"
                                 + "[v0][a0][v1][a1]concat=n=2:v=1:a=1[outv][outa]",
                         w, h, w, h, w, h, w, h);
-                String cmd = "-y -loop 1 -t 1.2 -i " + AudioDspEngine.q(inCov) + " -i " + AudioDspEngine.q(inVid)
+                String cmd = "-y -threads 0 -loop 1 -t 1.2 -i " + AudioDspEngine.q(inCov) + " -i " + AudioDspEngine.q(inVid)
                         + " -filter_complex \"" + fc + "\" -map \"[outv]\" -map \"[outa]\" "
-                        + "-c:v libx264 -preset fast -crf 25 -c:a aac -profile:a aac_low -b:a 112k -movflags +faststart "
+                        + "-c:v libx264 -preset superfast -crf 25 -c:a aac -profile:a aac_low -b:a 112k -movflags +faststart "
                         + AudioDspEngine.q(outMp4);
                 AudioDspEngine.runFfmpegOrThrow(cmd);
             }
@@ -824,9 +824,9 @@ public final class VideoEditEngine {
                         + " -c copy -movflags +faststart " + AudioDspEngine.q(outMp4);
                 AudioDspEngine.runFfmpegOrThrow(cmd);
             } else {
-                String cmd = "-y -t 6 -i " + AudioDspEngine.q(inVid)
+                String cmd = "-y -threads 0 -t 6 -i " + AudioDspEngine.q(inVid)
                         + " -filter_complex \"[0:v]split[v1][v2];[v2]reverse[vr];[v1][vr]concat=n=2:v=1:a=0,format=yuv420p[outv]\" "
-                        + "-map \"[outv]\" -an -c:v libx264 -preset fast -crf 25 -movflags +faststart "
+                        + "-map \"[outv]\" -an -c:v libx264 -preset superfast -crf 25 -movflags +faststart "
                         + AudioDspEngine.q(outMp4);
                 AudioDspEngine.runFfmpegOrThrow(cmd);
             }
@@ -847,9 +847,9 @@ public final class VideoEditEngine {
             int abr = Math.max(64, Math.min(320, audioBitrateKbps));
             String afArg = (afChain == null || afChain.trim().isEmpty()) ? "-c:a aac -profile:a aac_low -b:a " + abr + "k "
                     : ("-af \"" + afChain + "\" -c:a aac -profile:a aac_low -b:a " + abr + "k ");
-            String cmd = "-y -i " + AudioDspEngine.q(inVid)
+            String cmd = "-y -threads 0 -i " + AudioDspEngine.q(inVid)
                     + " -vf \"" + vfChain + ",format=yuv420p\" "
-                    + "-c:v libx264 -preset fast -crf 25 " + afArg + "-movflags +faststart "
+                    + "-c:v libx264 -preset superfast -crf 25 " + afArg + "-movflags +faststart "
                     + AudioDspEngine.q(outMp4);
             AudioDspEngine.runFfmpegOrThrow(cmd);
         } finally {
@@ -878,9 +878,9 @@ public final class VideoEditEngine {
                         + "[1:v]scale=640:720:force_original_aspect_ratio=increase,crop=640:720,setsar=1[v1];"
                         + "[v0][v1]hstack=inputs=2,format=yuv420p[outv]";
             }
-            String cmd = "-y -i " + AudioDspEngine.q(f1) + " -i " + AudioDspEngine.q(f2)
+            String cmd = "-y -threads 0 -i " + AudioDspEngine.q(f1) + " -i " + AudioDspEngine.q(f2)
                     + " -filter_complex \"" + fc + "\" -map \"[outv]\" -map 0:a? "
-                    + "-c:v libx264 -preset fast -crf 25 -c:a aac -profile:a aac_low -b:a 112k -shortest -movflags +faststart "
+                    + "-c:v libx264 -preset superfast -crf 25 -c:a aac -profile:a aac_low -b:a 112k -shortest -movflags +faststart "
                     + AudioDspEngine.q(outMp4);
             AudioDspEngine.runFfmpegOrThrow(cmd);
         } finally {

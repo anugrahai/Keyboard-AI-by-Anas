@@ -157,7 +157,7 @@ public final class AudioToVideoConverter {
                     listener.onProgress(1, 1, 8, "Menyelaraskan musik latar dengan suara TTS...");
                 }
                 tempMusicMat = AudioDspEngine.materializeRawCopyIfContent(ctx, musicUri, workDir, "a2v_bgm");
-                tempMixedAudio = new File(workDir, "mixed_master_" + System.currentTimeMillis() + ".flac");
+                tempMixedAudio = new File(workDir, "mixed_master_" + System.currentTimeMillis() + ".wav");
                 prepareMixedMasterAudio(audioFile, tempMusicMat, tempMixedAudio, totalSecDouble, musicStartSec, musicVolume);
                 preparedAudio = tempMixedAudio;
             }
@@ -255,10 +255,10 @@ public final class AudioToVideoConverter {
                         + "[vmain][bgduck]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[outa]",
                 ttsDurSec, vol, fadeStart, fadeDur);
 
-        String cmd = "-y -i " + AudioDspEngine.q(ttsFile) + " "
+        String cmd = "-y -threads 0 -i " + AudioDspEngine.q(ttsFile) + " "
                 + "-stream_loop -1 " + ssArg + "-i " + AudioDspEngine.q(musicFile) + " "
                 + "-filter_complex \"" + fc + "\" -map \"[outa]\" -t " + String.format(Locale.US, "%.3f", ttsDurSec) + " "
-                + "-c:a flac " + AudioDspEngine.q(outFlac);
+                + "-c:a pcm_s16le " + AudioDspEngine.q(outFlac);
         AudioDspEngine.runFfmpegOrThrow(cmd);
     }
 
@@ -282,8 +282,8 @@ public final class AudioToVideoConverter {
                 ? "[1:a]asplit=2[aw][ao]"
                 : "[1:a]highpass=f=55,alimiter=limit=0.95,asplit=2[aw][ao]";
         String fc = audioFilter + ";"
-                + "[aw]showwaves=s=560x110:mode=cline:rate=6:colors=0x38BDF8|0x60A5FA[wv];"
-                + "[0:v][wv]overlay=80:880:shortest=1,format=yuv420p[outv]";
+                + "[aw]showwaves=s=420x84:mode=cline:rate=6:colors=0x38BDF8|0x60A5FA[wv];"
+                + "[0:v][wv]overlay=60:660:shortest=1,format=yuv420p[outv]";
 
         String audioArgs = hasMusic
                 ? "-c:a aac -profile:a aac_low -b:a 96k -ar 44100 -ac 2"
@@ -292,10 +292,10 @@ public final class AudioToVideoConverter {
         String ssArg = startSec > 0.01 ? String.format(Locale.US, "-ss %.3f ", startSec) : "";
         String tArg = String.format(Locale.US, "-t %.3f ", partDurSec);
 
-        String cmd = "-y -loop 1 -r 6 " + tArg + "-i " + AudioDspEngine.q(cardPng) + " "
+        String cmd = "-y -threads 0 -loop 1 -r 6 " + tArg + "-i " + AudioDspEngine.q(cardPng) + " "
                 + ssArg + tArg + "-i " + AudioDspEngine.q(audioFile) + " "
                 + "-filter_complex \"" + fc + "\" -map \"[outv]\" -map \"[ao]\" "
-                + "-c:v libx264 -preset fast -tune stillimage -crf 28 -maxrate 180k -bufsize 360k -g 30 "
+                + "-c:v libx264 -preset superfast -tune stillimage -crf 28 -maxrate 160k -bufsize 320k -g 30 "
                 + audioArgs + " " + tArg + "-shortest -movflags +faststart " + AudioDspEngine.q(outMp4);
 
         final CountDownLatch latch = new CountDownLatch(1);
@@ -349,8 +349,8 @@ public final class AudioToVideoConverter {
             double partDurSec,
             String scriptPreviewText
     ) throws Exception {
-        final int w = 720;
-        final int h = 1280;
+        final int w = 540;
+        final int h = 960;
         Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         try {
             Canvas c = new Canvas(bmp);
@@ -362,24 +362,24 @@ public final class AudioToVideoConverter {
 
             Paint cardPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
             cardPaint.setColor(Color.parseColor("#CC1E293B"));
-            c.drawRoundRect(new RectF(44, 170, w - 44, h - 170), 32, 32, cardPaint);
+            c.drawRoundRect(new RectF(33, 128, w - 33, h - 128), 24, 24, cardPaint);
 
             Paint badgePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
             badgePaint.setColor(Color.parseColor("#2563EB"));
-            c.drawRoundRect(new RectF(80, 215, 460, 275), 24, 24, badgePaint);
+            c.drawRoundRect(new RectF(60, 162, 345, 206), 18, 18, badgePaint);
 
             Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
             textPaint.setColor(Color.WHITE);
             textPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
-            textPaint.setTextSize(25f);
+            textPaint.setTextSize(19f);
             String badgeTxt = fullSingleVideo
                     ? "VIDEO MP4 UTUH • GEMINI TTS"
                     : ("STATUS WA • BAGIAN " + partNum + "/" + totalParts);
-            c.drawText(badgeTxt, 102, 255, textPaint);
+            c.drawText(badgeTxt, 76, 192, textPaint);
 
-            textPaint.setTextSize(32f);
+            textPaint.setTextSize(24f);
             textPaint.setColor(Color.parseColor("#38BDF8"));
-            c.drawText("Keyboard AI by Anas • Gemini TTS", 80, 338, textPaint);
+            c.drawText("Keyboard AI by Anas • Gemini TTS", 60, 254, textPaint);
 
             String cleanSnippet = (scriptPreviewText == null ? "" : scriptPreviewText)
                     .replaceAll("\\[[^\\]]{1,40}\\]", "")
@@ -390,37 +390,37 @@ public final class AudioToVideoConverter {
 
             TextPaint bodyPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
             bodyPaint.setColor(Color.parseColor("#E2E8F0"));
-            bodyPaint.setTextSize(34f);
+            bodyPaint.setTextSize(25.5f);
 
             c.save();
-            c.translate(80, 385);
-            StaticLayout sl = StaticLayout.Builder.obtain(cleanSnippet, 0, cleanSnippet.length(), bodyPaint, w - 160)
+            c.translate(60, 288);
+            StaticLayout sl = StaticLayout.Builder.obtain(cleanSnippet, 0, cleanSnippet.length(), bodyPaint, w - 120)
                     .setAlignment(Layout.Alignment.ALIGN_NORMAL)
-                    .setLineSpacing(6f, 1.15f)
+                    .setLineSpacing(4.5f, 1.15f)
                     .setMaxLines(10)
                     .build();
             sl.draw(c);
             c.restore();
 
-            // Panel gelap presisi untuk area waveform dinamis FFmpeg (80, 880, 640, 990)
+            // Panel gelap presisi untuk area waveform dinamis FFmpeg (60, 660, 480, 744)
             Paint waveBoxPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
             waveBoxPaint.setColor(Color.parseColor("#000000"));
-            c.drawRoundRect(new RectF(72, 872, 648, 998), 18, 18, waveBoxPaint);
+            c.drawRoundRect(new RectF(54, 654, 486, 748), 14, 14, waveBoxPaint);
 
             Paint waveBorder = new Paint(Paint.ANTI_ALIAS_FLAG);
             waveBorder.setStyle(Paint.Style.STROKE);
-            waveBorder.setStrokeWidth(2.5f);
+            waveBorder.setStrokeWidth(2f);
             waveBorder.setColor(Color.parseColor("#334155"));
-            c.drawRoundRect(new RectF(72, 872, 648, 998), 18, 18, waveBorder);
+            c.drawRoundRect(new RectF(54, 654, 486, 748), 14, 14, waveBorder);
 
-            textPaint.setTextSize(26f);
+            textPaint.setTextSize(19.5f);
             textPaint.setColor(Color.parseColor("#CBD5E1"));
             String durTxt = "Durasi Klip: " + formatDuration(partDurSec)
                     + (fullSingleVideo ? "" : ("  •  Bagian " + partNum + " dari " + totalParts));
-            c.drawText(durTxt, 80, 1055, textPaint);
+            c.drawText(durTxt, 60, 792, textPaint);
 
             try (FileOutputStream fos = new FileOutputStream(outPng, false)) {
-                bmp.compress(Bitmap.CompressFormat.PNG, 95, fos);
+                bmp.compress(Bitmap.CompressFormat.PNG, 90, fos);
             }
         } finally {
             bmp.recycle();
