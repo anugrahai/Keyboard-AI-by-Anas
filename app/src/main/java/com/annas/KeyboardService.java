@@ -4309,8 +4309,10 @@ public class KeyboardService extends InputMethodService implements CustomKeyboar
                     boolean jsonMode = prefs.getBoolean("ai_json_mode", false);
 
                     StringBuilder superPrompt = new StringBuilder();
-                    superPrompt.append("Tugas Anda merespons teks dengan aturan mutlak di bawah ini. Jangan ada instruksi tambahan dan jangan ada kata pengantar. LANGSUNG BERIKAN HASIL AKHIRNYA SAJA.\n\n");
+                    superPrompt.append("Tugas Anda memproses teks dengan aturan mutlak di bawah ini. DILARANG KERAS menulis kata pengantar, salam pembuka, atau penutup seperti 'Berikut', 'Tentu', 'Oke', 'Siap', 'Ini hasilnya', atau 'Semoga membantu'. LANGSUNG KELUARKAN HASIL AKHIRNYA SAJA.\n\n");
                     superPrompt.append("=== ATURAN MUTLAK ===\n");
+
+                    final boolean isGeminiTtsStyle = isGeminiTtsCreativeStyle(gayaAktif, gayaPrompt);
 
                     if (forceWingman || (wingmanMode && !replaceEditorOnSuccess)) {
                         superPrompt.append("- MODE WINGMAN: Buat balasan untuk chat ini. Anda adalah manusia biasa, bukan AI.\n");
@@ -4353,16 +4355,21 @@ public class KeyboardService extends InputMethodService implements CustomKeyboar
                             superPrompt.append("- MODE TERJEMAHAN: Buat hasil akhir balasan dalam bahasa ").append(langTrg).append(".\n");
                         }
                     } else {
-                        // Alur Terpadu untuk Voice Input & Revisi Teks:
-                        // Semua setelan aktif (Revisi, Gaya Bahasa, Instruksi Khusus, dan Translator) berjalan bersama-sama & optimal!
-                        if (replaceEditorOnSuccess || modeRevisi) {
+                        // Alur Terpadu untuk Voice Input & Revisi Teks (atau Mode Kreatif / Gemini TTS):
+                        if (isGeminiTtsStyle) {
+                            superPrompt.append("- MODE KREATIF & PENGOLAH GEMINI TTS: Pahami niat input pengguna secara cerdas tanpa terpaku pada kalimat perintahnya:\n")
+                                    .append("  1) Jika input pengguna berupa PERINTAH/PERMINTAAN/TOPIK (baik diawali kata 'tolong', 'buatkan', 'bikinin', 'coba', ataupun langsung topik/konsep singkat tanpa kata 'tolong'), LANGSUNG buatkan naskah lengkap dari nol sesuai permintaan & gaya di bawah.\n")
+                                    .append("  2) Jika input pengguna berupa TEKS/NASKAH/CERITA/DIALOG yang sudah ada, OLAH & KEMBANGKAN teks tersebut sesuai gaya (pertahankan pesan inti user, ubah ke Pembicara1:/Pembicara2: bila diminta dialog, dan sisipkan tag ekspresi Gemini TTS [...] di titik awal/tengah/akhir yang paling hidup).\n")
+                                    .append("  3) WAJIB langsung keluarkan naskah siap baca saja tanpa pembuka, tanpa penutup, tanpa tanda bintang (*), dan tanpa markdown (**).\n");
+                        } else if (replaceEditorOnSuccess || modeRevisi) {
                             superPrompt.append("- MODE REVISI TEKS: Perbaiki salah ketik (typo), ejaan, tata bahasa, dan susunan kalimat pada teks berikut agar rapi, jelas, dan optimal.\n");
                         } else {
                             superPrompt.append("- TUGAS STANDAR: Rapikan teks suara ini dengan ejaan dan tanda baca yang natural.\n");
                         }
 
                         if (!gayaAktif.equals("Standar") && !gayaPrompt.isEmpty()) {
-                            superPrompt.append("- GAYA BAHASA (").append(gayaAktif).append("): ").append(gayaPrompt).append("\n");
+                            String cleanGayaPrompt = gayaPrompt.replace("[MODE: GEMINI_TTS]", "").trim();
+                            superPrompt.append("- GAYA BAHASA (").append(gayaAktif).append("): ").append(cleanGayaPrompt).append("\n");
                         }
 
                         if (customInstEnabled && !customInst.isEmpty()) {
@@ -4438,6 +4445,10 @@ public class KeyboardService extends InputMethodService implements CustomKeyboar
                     }
                     finalResult = finalResult.replaceAll("(?s)<think>.*?</think>", "").trim();
                     if (finalResult.startsWith("<think>")) finalResult = "";
+                    finalResult = stripCommonAiPreamble(finalResult);
+                    if (isGeminiTtsStyle) {
+                        finalResult = cleanGeminiTtsScriptOutput(finalResult);
+                    }
 
                     final String teksJadi = terapkanKamus(finalResult).trim();
                     if (teksJadi.isEmpty()) throw new Exception("Hasil respon AI kosong");
@@ -4491,6 +4502,68 @@ public class KeyboardService extends InputMethodService implements CustomKeyboar
             }
         });
         aiThread.start();
+    }
+
+    private static boolean isGeminiTtsCreativeStyle(String gayaNama, String gayaPrompt) {
+        String p = gayaPrompt == null ? "" : gayaPrompt;
+        String n = gayaNama == null ? "" : gayaNama.toLowerCase(java.util.Locale.ROOT);
+        return p.contains("[MODE: GEMINI_TTS]")
+                || p.contains("Pembicara1:")
+                || n.contains("gemini tts")
+                || n.contains("gaya bebas")
+                || n.contains("dialog podcast")
+                || n.contains("bumbu ekspresi");
+    }
+
+    /** Hapus baris pengantar basa-basi AI ("Berikut...", "Tentu...") dan pagar markdown ``` bila muncul. */
+    private static String stripCommonAiPreamble(String raw) {
+        if (raw == null) return "";
+        String t = raw.trim();
+        t = t.replaceAll("(?s)^```[a-zA-Z0-9_-]*\\s*", "");
+        t = t.replaceAll("(?s)\\s*```$", "").trim();
+        String[] lines = t.split("\\r?\\n", -1);
+        if (lines.length > 1) {
+            String first = lines[0].trim().toLowerCase(java.util.Locale.ROOT);
+            if (first.matches("^(berikut|tentu|baik|oke|siap|ini (dia|adalah|hasil|naskah|skrip)|hasil|naskah|skrip)[^\\n]{0,80}:\\s*$")
+                    || first.startsWith("tentu, ini")
+                    || first.startsWith("berikut adalah")
+                    || first.startsWith("berikut ini")) {
+                StringBuilder sb = new StringBuilder();
+                for (int i = 1; i < lines.length; i++) {
+                    if (sb.length() > 0 || !lines[i].trim().isEmpty()) {
+                        if (sb.length() > 0) sb.append("\n");
+                        sb.append(lines[i]);
+                    }
+                }
+                t = sb.toString().trim();
+            }
+        }
+        return t;
+    }
+
+    /** Rapikan output skrip Gemini TTS agar bebas markdown ** / * dan memakai label Pembicara1:/Pembicara2: yang bersih. */
+    private static String cleanGeminiTtsScriptOutput(String raw) {
+        if (raw == null) return "";
+        String t = raw.replace("**", "").replace("__", "");
+        // Ubah *tertawa* -> [tertawa] bila ada model AI membandel memakai tanda bintang
+        t = t.replaceAll("\\*([^\\*\\n]{2,30})\\*", "[$1]");
+        t = t.replace("*", "");
+        t = t.replaceAll("(?im)^\\s*(Speaker\\s*1|Pembicara\\s*1)\\s*:", "Pembicara1:");
+        t = t.replaceAll("(?im)^\\s*(Speaker\\s*2|Pembicara\\s*2)\\s*:", "Pembicara2:");
+        // Hapus catatan penutup singkat jika model menambahkan "Catatan:" atau "Semoga..." di baris terakhir
+        String[] lines = t.split("\\r?\\n");
+        if (lines.length > 1) {
+            String last = lines[lines.length - 1].trim().toLowerCase(java.util.Locale.ROOT);
+            if (last.startsWith("catatan:") || last.startsWith("semoga membantu") || last.startsWith("selamat mencoba")) {
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < lines.length - 1; i++) {
+                    if (i > 0) sb.append("\n");
+                    sb.append(lines[i]);
+                }
+                t = sb.toString().trim();
+            }
+        }
+        return t.trim();
     }
 
     private void ketikHasil(String teks) {

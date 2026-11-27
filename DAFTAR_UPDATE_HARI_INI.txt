@@ -1,16 +1,16 @@
-KEYBOARD AI BY ANAS — DAFTAR UPDATE v34.0 (VERIFIKASI REAL-TIME SAAT KEYBOARD TAMPIL + MULTI-DEVICE ID + SCROLL GEMINI TTS RINGAN)
+KEYBOARD AI BY ANAS — DAFTAR UPDATE v35.0 (GAYA 6 MODE GEMINI TTS + LOGIKA CERDAS BEBAS REQUEST & ANTI-PENGANTAR)
 
-Pembaruan Utama Rilis v34.0:
-1. VERIFIKASI PREMIUM REAL-TIME SAAT KEYBOARD / PENGATURAN TAMPIL (TANPA GANGGU MENGETIK):
-- Saat keyboard terbuka (`onStartInputView`) atau layar aplikasi/pengaturan aktif, app menempelkan listener real-time Firestore di background secara non-blocking — mengetik huruf/Braille tetap 100% ngebut tanpa delay.
-- Jika Admin mencabut Premium, memblokir akun, atau menghapus izin Device ID, tombol Input Suara AI & akses AI langsung terkunci dalam hitungan ~1 detik!
-- Begitu keyboard ditutup (`onFinishInputView` / `onWindowHidden`) dan aplikasi keluar latar, listener langsung dilepas (nol pengecekan latar belakang), sementara batas offline grace tetap terjaga 48 jam.
+Pembaruan Utama Rilis v35.0:
+1. GAYA 6 RESMI BERUBAH MENJADI `6. Mode Gemini TTS (Dialog, Monolog & Gaya Bebas)` (19 PRESET LENGKAP):
+- Seluruh 11 preset lama (Komedi, Horor, Debat Panas, Deep Talk, Storytime, Drama Religi, Edukasi, Interview, Motivasi, Romansa, Sci-Fi Thriller) diperbarui dari `Speaker1:` tanpa tag menjadi format resmi `Pembicara1:` & `Pembicara2:` lengkap dengan tag ekspresi Gemini TTS (`[tertawa]`, `[terkejut]`, `[hela napas]`, `[napas]`, `[jeda]`, `[jeda panjang]`, `[batuk]`, `[dehem]`, `[semangat]`, `[marah]`, `[kesal]`, `[sedih]`, `[bisik]`, `[takut]`, `[tegas]`, `[lembut]`, `[sinis]`, `[romantis]`, `[panik]`, `[tenang]`, `[kagum]`, `[haru]`, `[ragu]`, `[senyum]`, `[serius]`).
+- Ditambah 8 gaya baru cerdas: `Gaya Bebas Gemini TTS (Bebas Request, Tolong atau Tanpa Tolong)`, `Ubah Teks Saya Jadi Dialog Podcast`, `Beri Bumbu Ekspresi Gemini TTS (Pertahankan Kalimat Asli)`, `Monolog & Voice Over 1 Pembicara Ekspresif`, `Promo & Iklan Komedi Podcast`, `Review & Tutorial Produk Santai`, `Dongeng & Cerita Anak Interaktif`, dan `Drama Konflik & Pengkhianatan`.
 
-2. KEAMANAN MULTI-DEVICE ID (PULUHAN HP DALAM 1 AKUN GOOGLE VIA PANEL ADMIN):
-- HP pertama otomatis mendaftarkan `deviceId` ke `allowedDeviceIds` akun (sesuai aturan keamanan `firestore.rules`).
-- Jika akun yang sama login di HP kedua/lain yang Device ID-nya belum terdaftar, akses AI terkunci dan user diberi dialog/pesan jelas lengkap dengan Akun Google, UID, Device ID baru, tombol `Salin Device ID`, serta `Hubungi Admin (WA)`.
-- Admin tinggal membuka Panel Admin -> pilih akun user -> `Kelola Multi-Device ID` -> tempel/tambah Device ID (bisa puluhan perangkat dalam 1 akun tanpa ganti akun!).
+2. LOGIKA CERDAS DETEKSI NIAT + ZERO KATA PENGANTAR (`KeyboardService.java`):
+- Saat Gaya 6 (`Mode Gemini TTS`) atau `Gaya Bebas` aktif, AI otomatis mengenali 3 niat input tanpa paksaan "Mode Revisi Teks":
+  (a) Perintah/ide (pakai kata "tolong", "bikinin", ataupun langsung topik singkat tanpa kata "tolong") -> langsung buatkan naskah dari 0.
+  (b) Teks/cerita mentah yang sudah ditulis -> diolah jadi dialog/monolog ekspresif tanpa menghilangkan inti pesan.
+  (c) Naskah/dialog yang sudah ada -> diperkaya tag ekspresinya dengan menjaga kalimat asli.
+- Ditambah filter pembersih otomatis (`stripCommonAiPreamble` + `cleanGeminiTtsScriptOutput`) agar AI bebas kata pengantar ("Berikut...", "Tentu..."), bebas markdown `**` / `*`, dan bersih pakai `Pembicara1:` / `Pembicara2:`.
 
-3. PERBAIKAN SCROLL GEMINI TTS STUDIO + PEMBACA LAYAR:
-- Menambahkan `android:windowSoftInputMode="adjustResize|stateHidden"` pada `GeminiTtsActivity`.
-- Memindahkan blok judul, badge API key, dan kartu ringkasan status ke dalam `ScrollView` (`fillViewport` + `smoothScrollingEnabled`) dengan padding bawah aman (`56dp`), serta membatasi tinggi `EditText` (`minLines=4`, `maxLines=6` scrollable) sehingga seluruh tombol dari atas sampai bawah tetap terlihat & enteng discroll walau keyboard muncul atau memakai screen reader (TalkBack / Jieshuo).
+3. EKSTRAK OTOMATIS SAAT UPDATE DARI GITHUB (`MainActivity.java`):
+- `extractDefaultStyles()` versi `v35` otomatis menyinkronkan folder `6. Mode Gemini TTS` di HP saat pertama kali dibuka setelah update (sambil tetap menjaga gaya kustom buatan pengguna), serta menyegarkan `gaya_aktif_prompt` bila masih memakai prompt lama.

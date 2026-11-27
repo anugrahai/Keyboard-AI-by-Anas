@@ -204,38 +204,101 @@ public class MainActivity extends Activity {
             @Override public void run() {
                 try {
                     final String ASSET_GAYA_PATH = "gaya input suara final";
+                    final String OLD_GAYA6 = "6. Podcast & Audio Drama (Murni Percakapan Tanpa Tag)";
+                    final String NEW_GAYA6 = "6. Mode Gemini TTS (Dialog, Monolog & Gaya Bebas)";
+                    final int TARGET_GAYA6_VER = 35;
+
                     File destRoot = new File(getExternalFilesDir(null), ASSET_GAYA_PATH);
-                    
-                    // Hitung jumlah subfolder - jika < 10, berarti belum lengkap, extract ulang
+
+                    // Hitung jumlah subfolder - jika < 10, berarti belum lengkap, extract ulang seluruhnya
                     int folderCount = 0;
                     if (destRoot.exists() && destRoot.listFiles() != null) {
                         for (File f : destRoot.listFiles()) {
                             if (f.isDirectory()) folderCount++;
                         }
                     }
-                    
-                    if (folderCount >= 10) {
-                        // Sudah lengkap, skip
+
+                    if (folderCount < 10) {
+                        if (destRoot.exists()) {
+                            deleteRecursive(destRoot);
+                        }
+                        destRoot.mkdirs();
+                        copyAssetFolder(ASSET_GAYA_PATH, destRoot.getAbsolutePath());
+                        prefs.edit().putInt("gaya6_asset_version", TARGET_GAYA6_VER).apply();
+
+                        final int hasil = destRoot.listFiles() != null ? destRoot.listFiles().length : 0;
+                        runOnUiThread(new Runnable() {
+                            @Override public void run() {
+                                Toast.makeText(MainActivity.this,
+                                    hasil + " folder gaya berhasil disiapkan!", Toast.LENGTH_LONG).show();
+                            }
+                        });
                         return;
                     }
-                    
-                    // Hapus dulu kalau ada tapi tidak lengkap
-                    if (destRoot.exists()) {
-                        deleteRecursive(destRoot);
-                    }
-                    destRoot.mkdirs();
-                    
-                    // Copy dari assets
-                    copyAssetFolder(ASSET_GAYA_PATH, destRoot.getAbsolutePath());
-                    
-                    // Hitung hasil
-                    final int hasil = destRoot.listFiles() != null ? destRoot.listFiles().length : 0;
-                    runOnUiThread(new Runnable() {
-                        @Override public void run() {
-                            Toast.makeText(MainActivity.this,
-                                hasil + " folder gaya berhasil disiapkan!", Toast.LENGTH_LONG).show();
+
+                    // Saat update APK (v35+): perbarui folder Gaya 6 secara otomatis tanpa menghapus gaya pribadi user
+                    if (prefs.getInt("gaya6_asset_version", 0) < TARGET_GAYA6_VER) {
+                        File oldDir = new File(destRoot, OLD_GAYA6);
+                        File newDir = new File(destRoot, NEW_GAYA6);
+                        if (!newDir.exists()) newDir.mkdirs();
+
+                        // Copy seluruh preset Mode Gemini TTS terbaru dari assets ke folder 6 baru
+                        copyAssetFolder(ASSET_GAYA_PATH + "/" + NEW_GAYA6, newDir.getAbsolutePath());
+
+                        // Selamatkan file custom buatan user dari folder 6 lama jika namanya bukan preset lama
+                        if (oldDir.exists() && oldDir.isDirectory()) {
+                            File[] oldFiles = oldDir.listFiles();
+                            if (oldFiles != null) {
+                                for (File f : oldFiles) {
+                                    File target = new File(newDir, f.getName());
+                                    if (f.isFile() && !target.exists()) {
+                                        try {
+                                            String txt = readUtf8File(f);
+                                            if (!txt.contains("DILARANG pakai tag emosi")) {
+                                                copySingleFile(f, target);
+                                            }
+                                        } catch (Throwable ignored) {}
+                                    }
+                                }
+                            }
+                            deleteRecursive(oldDir);
                         }
-                    });
+
+                        // Jika gaya aktif user saat ini masih memakai prompt Gaya 6 versi lama, segarkan ke versi baru
+                        String activeName = prefs.getString("gaya_aktif_nama", "Standar");
+                        String activePrompt = prefs.getString("gaya_aktif_prompt", "");
+                        if (activePrompt.contains("Speaker1:") && activePrompt.contains("DILARANG pakai tag emosi")) {
+                            File exactMatch = new File(newDir, activeName + ".txt");
+                            File prefixMatch = null;
+                            if (!exactMatch.exists() && newDir.listFiles() != null) {
+                                String basePrefix = activeName.contains("(")
+                                        ? activeName.substring(0, activeName.indexOf('(')).trim().toLowerCase(java.util.Locale.ROOT)
+                                        : activeName.toLowerCase(java.util.Locale.ROOT);
+                                for (File nf : newDir.listFiles()) {
+                                    if (nf.isFile() && nf.getName().toLowerCase(java.util.Locale.ROOT).startsWith(basePrefix)) {
+                                        prefixMatch = nf;
+                                        break;
+                                    }
+                                }
+                            }
+                            File useFile = exactMatch.exists() ? exactMatch : prefixMatch;
+                            if (useFile != null && useFile.exists()) {
+                                prefs.edit()
+                                        .putString("gaya_aktif_nama", useFile.getName().replace(".txt", ""))
+                                        .putString("gaya_aktif_prompt", readUtf8File(useFile).trim())
+                                        .apply();
+                            }
+                        }
+
+                        prefs.edit().putInt("gaya6_asset_version", TARGET_GAYA6_VER).apply();
+                        runOnUiThread(() -> {
+                            if (!isFinishing()) {
+                                renderActiveTab();
+                                Toast.makeText(MainActivity.this,
+                                        "Gaya 6 (Mode Gemini TTS) diperbarui otomatis!", Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                    }
                 } catch (final Exception e) {
                     runOnUiThread(new Runnable() {
                         @Override public void run() {
@@ -246,6 +309,19 @@ public class MainActivity extends Activity {
                 }
             }
         }).start();
+    }
+
+    private static String readUtf8File(File f) throws Exception {
+        java.io.BufferedReader br = new java.io.BufferedReader(
+                new java.io.InputStreamReader(new java.io.FileInputStream(f), "UTF-8"));
+        StringBuilder sb = new StringBuilder();
+        String line;
+        while ((line = br.readLine()) != null) {
+            if (sb.length() > 0) sb.append("\n");
+            sb.append(line);
+        }
+        br.close();
+        return sb.toString();
     }
 
     private void copyAssetFolder(String assetPath, String destPath) throws Exception {
@@ -268,6 +344,17 @@ public class MainActivity extends Activity {
         android.content.res.AssetManager am = getAssets();
         try (InputStream in = am.open(assetPath);
              OutputStream out = new FileOutputStream(destPath)) {
+            byte[] buf = new byte[4096];
+            int len;
+            while ((len = in.read(buf)) > 0) {
+                out.write(buf, 0, len);
+            }
+        }
+    }
+
+    private static void copySingleFile(File src, File dst) throws Exception {
+        try (InputStream in = new java.io.FileInputStream(src);
+             OutputStream out = new FileOutputStream(dst)) {
             byte[] buf = new byte[4096];
             int len;
             while ((len = in.read(buf)) > 0) {
