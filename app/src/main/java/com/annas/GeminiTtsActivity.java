@@ -312,6 +312,26 @@ public class GeminiTtsActivity extends Activity {
         return super.dispatchTouchEvent(ev);
     }
 
+    private ScrollView mainScroll;
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (AuthManager.isSignedIn()) {
+            AuthManager.startRealtimePremiumGuard(this, "gemini_tts", () -> {
+                if (!isFinishing() && !AuthManager.isPremiumActive(this)) {
+                    Toast.makeText(this, AuthManager.getAccessDeniedToast(this), Toast.LENGTH_LONG).show();
+                }
+            });
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        AuthManager.stopRealtimePremiumGuard("gemini_tts");
+        super.onStop();
+    }
+
     @Override
     public void onBackPressed() {
         if (activeTab != 0) {
@@ -429,20 +449,41 @@ public class GeminiTtsActivity extends Activity {
         root.setBackgroundColor(bg);
         root.setPadding(p, p, p, p);
 
+        // Baris 3 Tab Rapi tetap di atas agar navigasi tab 1 ketuk, sementara seluruh header & editor ikut ter-scroll ringan
+        LinearLayout tabBar = new LinearLayout(this);
+        tabBar.setOrientation(LinearLayout.HORIZONTAL);
+        tabBar.setPadding(0, 0, 0, UiKit.dp(this, 8));
+        tabBtn0 = OfficeUtils.makeRowButton(this, "1. Teks & Audio", "Tab input teks dan pemutar audio", UiKit.ACCENT_AI, Color.WHITE, v -> switchTab(0));
+        tabBtn1 = OfficeUtils.makeRowButton(this, "2. Suara & Model", "Tab model API, bahasa, dan sumber suara", surfaceAlt, txt, v -> switchTab(1));
+        tabBtn2 = OfficeUtils.makeRowButton(this, "3. Ekspresi & Gaya", "Tab pilih gaya utama, centang ekspresi tambahan, kunci Gemini, dan limit", surfaceAlt, txt, v -> switchTab(2));
+        tabBar.addView(tabBtn0);
+        tabBar.addView(tabBtn1);
+        tabBar.addView(tabBtn2);
+        root.addView(tabBar);
+
+        mainScroll = new ScrollView(this);
+        mainScroll.setFillViewport(true);
+        mainScroll.setSmoothScrollingEnabled(true);
+        mainScroll.setScrollbarFadingEnabled(false);
+
+        LinearLayout bodyHost = new LinearLayout(this);
+        bodyHost.setOrientation(LinearLayout.VERTICAL);
+        bodyHost.setPadding(0, 0, 0, UiKit.dp(this, 56));
+
         TextView title = new TextView(this);
         title.setText("Gemini Text-to-Speech Studio");
         title.setTextColor(txt);
         title.setTextSize(19);
         title.setTypeface(null, Typeface.BOLD);
-        root.addView(title);
+        bodyHost.addView(title);
 
         keyBadge = new TextView(this);
         keyBadge.setTextSize(12);
         keyBadge.setPadding(0, UiKit.dp(this, 2), 0, UiKit.dp(this, 6));
         updateKeyBadge();
-        root.addView(keyBadge);
+        bodyHost.addView(keyBadge);
 
-        // Kartu Ringkasan Gaya Aktif & Progres Berjalan selalu tampil di bagian paling atas
+        // Kartu Ringkasan Gaya Aktif & Progres Berjalan ikut di dalam ScrollView agar tombol tidak terdorong hilang saat keyboard tampil
         LinearLayout topSummaryCard = UiKit.makeCard(this, prefs);
         topSummaryCard.setPadding(UiKit.dp(this, 12), UiKit.dp(this, 10), UiKit.dp(this, 12), UiKit.dp(this, 10));
 
@@ -470,23 +511,9 @@ public class GeminiTtsActivity extends Activity {
         topProgressBar.setVisibility(View.GONE);
         topSummaryCard.addView(topProgressBar, new LinearLayout.LayoutParams(-1, UiKit.dp(this, 6)));
 
-        root.addView(topSummaryCard);
+        bodyHost.addView(topSummaryCard);
 
-        // Baris 3 Tab Rapi
-        LinearLayout tabBar = new LinearLayout(this);
-        tabBar.setOrientation(LinearLayout.HORIZONTAL);
-        tabBar.setPadding(0, 0, 0, UiKit.dp(this, 8));
-        tabBtn0 = OfficeUtils.makeRowButton(this, "1. Teks & Audio", "Tab input teks dan pemutar audio", UiKit.ACCENT_AI, Color.WHITE, v -> switchTab(0));
-        tabBtn1 = OfficeUtils.makeRowButton(this, "2. Suara & Model", "Tab model API, bahasa, dan sumber suara", surfaceAlt, txt, v -> switchTab(1));
-        tabBtn2 = OfficeUtils.makeRowButton(this, "3. Ekspresi & Gaya", "Tab pilih gaya utama, centang ekspresi tambahan, kunci Gemini, dan limit", surfaceAlt, txt, v -> switchTab(2));
-        tabBar.addView(tabBtn0);
-        tabBar.addView(tabBtn1);
-        tabBar.addView(tabBtn2);
-        root.addView(tabBar);
-
-        ScrollView scroll = new ScrollView(this);
-        LinearLayout bodyHost = new LinearLayout(this);
-        bodyHost.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll = mainScroll;
 
         // ================= TAB 0: TEKS & AUDIO =================
         tabPanel0 = new LinearLayout(this);
@@ -520,7 +547,21 @@ public class GeminiTtsActivity extends Activity {
         etInputText.setHintTextColor(muted);
         etInputText.setBackground(UiKit.roundedBox(bg, border, UiKit.dp(this, 10), UiKit.dp(this, 1)));
         etInputText.setPadding(p, p, p, p);
-        etInputText.setMinLines(8);
+        etInputText.setMinLines(4);
+        etInputText.setMaxLines(6);
+        etInputText.setVerticalScrollBarEnabled(true);
+        etInputText.setOverScrollMode(View.OVER_SCROLL_ALWAYS);
+        // Biarkan ScrollView luar tetap ringan saat teks pendek; hanya tahan scroll lokal jika teks melebihi tinggi kotak
+        etInputText.setOnTouchListener((v, event) -> {
+            if (v.canScrollVertically(1) || v.canScrollVertically(-1)) {
+                v.getParent().requestDisallowInterceptTouchEvent(true);
+                int action = event.getActionMasked();
+                if (action == android.view.MotionEvent.ACTION_UP || action == android.view.MotionEvent.ACTION_CANCEL) {
+                    v.getParent().requestDisallowInterceptTouchEvent(false);
+                }
+            }
+            return false;
+        });
         etInputText.setGravity(Gravity.TOP | Gravity.START);
         LinearLayout.LayoutParams etLp = new LinearLayout.LayoutParams(0, -2, 1f);
         editorRow.addView(etInputText, etLp);
@@ -931,6 +972,9 @@ public class GeminiTtsActivity extends Activity {
         tabPanel0.setVisibility(idx == 0 ? View.VISIBLE : View.GONE);
         tabPanel1.setVisibility(idx == 1 ? View.VISIBLE : View.GONE);
         tabPanel2.setVisibility(idx == 2 ? View.VISIBLE : View.GONE);
+        if (mainScroll != null) {
+            mainScroll.post(() -> mainScroll.scrollTo(0, 0));
+        }
 
         int inactiveBg = UiKit.surfaceAlt(prefs);
         int inactiveTxt = UiKit.textPrimary(prefs);
@@ -1744,9 +1788,12 @@ public class GeminiTtsActivity extends Activity {
                         + sampleScript;
 
         ScrollView sv = new ScrollView(this);
+        sv.setFillViewport(true);
+        sv.setSmoothScrollingEnabled(true);
+        sv.setScrollbarFadingEnabled(false);
         TextView tv = new TextView(this);
         int p = UiKit.dp(this, 16);
-        tv.setPadding(p, p, p, p);
+        tv.setPadding(p, p, p, UiKit.dp(this, 24));
         tv.setText(tutorialText);
         tv.setTextSize(13.5f);
         tv.setTextColor(UiKit.textPrimary(prefs));

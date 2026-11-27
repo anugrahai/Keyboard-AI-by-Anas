@@ -83,6 +83,7 @@ public class MainActivity extends Activity {
         SubPageEntry(String title, View view) { this.title = title; this.view = view; }
     }
     private int activeTab = 0;
+    private final ArrayList<Integer> tabHistory = new ArrayList<>();
     private final ArrayList<SubPageEntry> subPageStack = new ArrayList<>();
     private android.widget.FrameLayout contentHost;
     private LinearLayout tabBarContainer;
@@ -158,7 +159,14 @@ public class MainActivity extends Activity {
 
         AuthManager.syncUserFromServer(this, false, new AuthManager.SyncCallback() {
             @Override public void onSynced(AuthManager.AccountStatus status) {
-                if (!isFinishing()) checkKeyboardStatus();
+                if (!isFinishing()) {
+                    checkKeyboardStatus();
+                    renderActiveTab();
+                    if (status != null && status.signedIn && !status.deviceAuthorized && !shownUnregDevicePromptThisSession) {
+                        shownUnregDevicePromptThisSession = true;
+                        AuthManager.showDeviceNotRegisteredDialog(MainActivity.this, status, MainActivity.this::renderActiveTab);
+                    }
+                }
             }
             @Override public void onError(String message) {}
         });
@@ -268,6 +276,27 @@ public class MainActivity extends Activity {
         }
     }
 
+
+    private boolean shownUnregDevicePromptThisSession = false;
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (AuthManager.isSignedIn()) {
+            AuthManager.startRealtimePremiumGuard(this, "main", () -> {
+                if (!isFinishing()) {
+                    checkKeyboardStatus();
+                    renderActiveTab();
+                }
+            });
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        AuthManager.stopRealtimePremiumGuard("main");
+        super.onStop();
+    }
 
     @Override
 
@@ -707,7 +736,14 @@ public class MainActivity extends Activity {
     }
 
     private void selectTab(int tabIdx) {
+        selectTabInternal(tabIdx, true);
+    }
+
+    private void selectTabInternal(int tabIdx, boolean recordHistory) {
         if (tabIdx < 0 || tabIdx >= TAB_NAMES.length) tabIdx = 0;
+        if (recordHistory && mainUiMounted && tabIdx != activeTab) {
+            tabHistory.add(activeTab);
+        }
         activeTab = tabIdx;
         subPageStack.clear();
         if (tabBarContainer != null) tabBarContainer.setVisibility(View.VISIBLE);
@@ -822,8 +858,15 @@ public class MainActivity extends Activity {
             popSubPage();
             return;
         }
+        while (!tabHistory.isEmpty()) {
+            int prev = tabHistory.remove(tabHistory.size() - 1);
+            if (prev != activeTab && prev >= 0 && prev < TAB_NAMES.length) {
+                selectTabInternal(prev, false);
+                return;
+            }
+        }
         if (activeTab != 0) {
-            selectTab(0);
+            selectTabInternal(0, false);
             return;
         }
         super.onBackPressed();
@@ -1069,21 +1112,21 @@ public class MainActivity extends Activity {
 
         box.addView(UiKit.makeSectionLabel(this, "STUDIO MEDIA AUDIO & VIDEO PRO" + (isPro ? "" : " (KHUSUS PREMIUM)"), UiKit.ACCENT_AI));
         box.addView(UiKit.makeMenuButton(this, "Studio Editor Audio Pro (36 Fitur)" + lock,
-                "36 Fitur Khusus (1 Fitur = 1 Layar),Audio ke Video MP4, Potong sambil Putar + Undo/Redo, Live Efek Suara Drama Film & Backsound, EQ, Reverb Masjid & Status WA",
+                "36 Fitur Khusus (1 Fitur = 1 Layar), Audio ke Video MP4, Potong sambil Putar + Undo/Redo, Live Efek Film/Kartun/Ketawa & Backsound MP3 Asli, Geser Kiri/Kanan Mundur-Maju, EQ, Reverb Masjid & Status WA",
                 UiKit.ACCENT_KB, prefs, v -> {
                     if (requirePremiumForAi("Studio Editor Audio Pro")) {
                         startActivity(new Intent(MainActivity.this, AudioEditorStudioActivity.class));
                     }
                 }));
         box.addView(UiKit.makeMenuButton(this, "Studio Editor Video Pro (36 Fitur)" + lock,
-                "36 Fitur Khusus (1 Fitur = 1 Layar), Video ke Audio MP3/WAV, Potong sambil Putar + Undo/Redo, Live Efek Suara Film & Backsound, Rasio 9:16 Blur & Status WA",
+                "36 Fitur Khusus (1 Fitur = 1 Layar), Video ke Audio MP3/WAV, Potong sambil Putar + Undo/Redo, Live Efek Film/Kartun/Ketawa & Backsound MP3 Asli, Geser Kiri/Kanan Mundur-Maju, Rasio 9:16 Blur & Status WA",
                 UiKit.ACCENT_AI_ALT, prefs, v -> {
                     if (requirePremiumForAi("Studio Editor Video Pro")) {
                         startActivity(new Intent(MainActivity.this, VideoEditorStudioActivity.class));
                     }
                 }));
         box.addView(UiKit.makeMenuButton(this, "Studio Gudang & Laboratorium Backsound / Efek Film",
-                "8 Kategori Backsound Musik (Islami, Piano, Jazz, Rock, Jedag-Jedug, Horor, Sinematik, Lo-Fi 1-2 menit), 32 Efek Suara Drama Film, Laboratorium Uji & Hapus Audio (Save Sinkron)",
+                "98 MP3 Rekaman Asli: Islami, Audio 3D/8D, Piano, Jazz, Rock, Jedag-Jedug, Horor, Sinematik, Kartun Kocak, Suara Ketawa & Efek Film. Dengarkan, Pilih, atau Hapus di Laboratorium",
                 UiKit.ACCENT_WARM, prefs, v -> StudioGudangAudioManager.showStudioGudangMainDialog(MainActivity.this, prefs, null)));
 
         return wrapTabPage(box);
@@ -1135,7 +1178,7 @@ public class MainActivity extends Activity {
                 "Ekstrak ulang berkas gaya bawaan atau reset setelan pabrik",
                 UiKit.ACCENT_DANGER, prefs, v -> showDebugDialog()));
         box.addView(UiKit.makeMenuButton(this, "Studio Gudang & Laboratorium Backsound / Efek Film",
-                "Kelola, uji suara di laboratorium, atau hapus koleksi Backsound Musik (8 Kategori) & 32 Efek Suara Drama Film yang tidak diperlukan lalu Save",
+                "Dengarkan langsung 98 MP3 asli (Islami, 3D/8D, Piano, Jazz, Rock, Jedag-Jedug, Horor, Sinematik, Kartun, Suara Ketawa & Efek Film) atau hapus audio yang tidak perlu lalu Simpan",
                 UiKit.ACCENT_WARM, prefs, v -> StudioGudangAudioManager.showStudioGudangMainDialog(MainActivity.this, prefs, null)));
 
         return wrapTabPage(box);
@@ -1146,8 +1189,10 @@ public class MainActivity extends Activity {
         String msg = "Email Google: " + st.email + "\n"
                 + "Nama: " + st.displayName + "\n"
                 + "UID: " + st.uid + "\n"
+                + "Device ID HP Ini: " + st.deviceId + "\n"
+                + "Status Device: " + (st.deviceAuthorized ? "Terdaftar untuk Akun Ini" : "BELUM TERDAFTAR (Hubungi Admin)") + "\n"
                 + "Status Paket: " + st.getReadablePlanLabel() + "\n\n"
-                + "Catatan: Kunci API AI memakai kunci pribadi Anda. Status Premium sinkron otomatis.";
+                + "Catatan: Kunci API AI memakai kunci pribadi Anda. Status Premium sinkron real-time.";
         UiKit.dialog(this, prefs)
                 .setTitle("Akun & Status AI Premium")
                 .setMessage(msg)

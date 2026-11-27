@@ -1,13 +1,13 @@
 ======================================================================
 SONARLAB AUTOMATION - DAFTAR LINK RILIS RESMI
-Diperbarui otomatis : 2026-11-27
+Diperbarui otomatis : 2026-11-28
 ======================================================================
 
-[1] Keyboard AI & Braille Fullscreen (v33.0)
+[1] Keyboard AI & Braille Fullscreen (v34.0)
     Repo GitHub     : https://github.com/anugrahai/Keyboard-AI-by-Anas
-    Halaman Release : https://github.com/anugrahai/Keyboard-AI-by-Anas/releases/tag/33.0
-    Download APK    : https://github.com/anugrahai/Keyboard-AI-by-Anas/releases/download/33.0/Keyboard_AI_by_Anas_33.0.apk
-    Version Code    : 3300
+    Halaman Release : https://github.com/anugrahai/Keyboard-AI-by-Anas/releases/tag/34.0
+    Download APK    : https://github.com/anugrahai/Keyboard-AI-by-Anas/releases/download/34.0/Keyboard_AI_by_Anas_34.0.apk
+    Version Code    : 3400
 
 [2] Whisper Offline Models (v1.0)
     Repo GitHub     : https://github.com/anugrahai/whisper-offline-models
