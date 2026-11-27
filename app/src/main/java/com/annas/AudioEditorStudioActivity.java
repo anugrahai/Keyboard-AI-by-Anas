@@ -118,8 +118,8 @@ public class AudioEditorStudioActivity extends Activity {
     // 0 = Hub Utama, 1..36 = Halaman Khusus Masing-Masing Fitur Tunggal
     private int activeFeatureId = FEATURE_HUB;
 
-    private int selectedFormatIdx = 0;     // MP3
-    private int selectedBitrateIdx = 4;    // 192 kbps
+    private int selectedFormatIdx = 1;     // M4A / AAC Hemat & Jernih
+    private int selectedBitrateIdx = 2;    // 128 kbps
     private int selectedSampleRateIdx = 0; // 44100 Hz
     private int selectedChannelIdx = 0;    // Stereo
 
@@ -153,21 +153,15 @@ public class AudioEditorStudioActivity extends Activity {
     private final ArrayList<CutState> cutUndoStack = new ArrayList<>();
     private final ArrayList<CutState> cutRedoStack = new ArrayList<>();
 
-    // State Studio Efek Drama/Film & Backsound Sambil Putar (Live Tap SFX + Undo/Redo)
-    private static final class LiveSfxCue {
-        Uri uri;
-        String title;
-        long atMs;
-        float volume;
-        boolean isBacksoundLoop;
-        long lastTriggeredPlaybackMs = -5000L;
-    }
-    private final ArrayList<LiveSfxCue> liveSfxCues = new ArrayList<>();
-    private final ArrayList<ArrayList<LiveSfxCue>> sfxUndoStack = new ArrayList<>();
-    private final ArrayList<ArrayList<LiveSfxCue>> sfxRedoStack = new ArrayList<>();
-    private LinearLayout liveSfxListContainer;
+    // State Studio Efek Drama/Film & Backsound Sambil Putar (Tab Centang + Live Play + Undo/Redo)
+    private final ArrayList<DramaSoundPaletteHelper.CueItem> liveSfxCues = new ArrayList<>();
+    private final ArrayList<ArrayList<DramaSoundPaletteHelper.CueItem>> sfxUndoStack = new ArrayList<>();
+    private final ArrayList<ArrayList<DramaSoundPaletteHelper.CueItem>> sfxRedoStack = new ArrayList<>();
+    private DramaSoundPaletteHelper.Controller paletteController;
     private final ArrayList<MediaPlayer> activeCuePlayers = new ArrayList<>();
     private long lastTickerPosMs = -1L;
+    private float swipeStartX = 0f, swipeStartY = 0f;
+    private boolean swipeTracking = false, swipeTriggered = false;
 
     // State Gabung Banyak Audio
     private static final class ClipSlot {
@@ -212,8 +206,8 @@ public class AudioEditorStudioActivity extends Activity {
             return;
         }
 
-        selectedFormatIdx = Math.max(0, Math.min(FORMAT_EXTENSIONS.length - 1, uiPrefs.getInt("aed_fmt_idx", 0)));
-        selectedBitrateIdx = Math.max(0, Math.min(BITRATE_VALUES.length - 1, uiPrefs.getInt("aed_br_idx", 4)));
+        selectedFormatIdx = Math.max(0, Math.min(FORMAT_EXTENSIONS.length - 1, uiPrefs.getInt("aed_fmt_idx", 1)));
+        selectedBitrateIdx = Math.max(0, Math.min(BITRATE_VALUES.length - 1, uiPrefs.getInt("aed_br_idx", 2)));
         selectedSampleRateIdx = Math.max(0, Math.min(SAMPLE_RATE_VALUES.length - 1, uiPrefs.getInt("aed_sr_idx", 0)));
         selectedChannelIdx = Math.max(0, Math.min(CHANNEL_VALUES.length - 1, uiPrefs.getInt("aed_ch_idx", 0)));
 
@@ -268,7 +262,55 @@ public class AudioEditorStudioActivity extends Activity {
     }
 
     @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        if (activeFeatureId != FEATURE_HUB && singleUri != null && ev.getPointerCount() == 1) {
+            int action = ev.getActionMasked();
+            if (action == android.view.MotionEvent.ACTION_DOWN) {
+                boolean onSeekBar = false;
+                if (seekBar != null && seekBar.getVisibility() == View.VISIBLE) {
+                    int[] loc = new int[2];
+                    seekBar.getLocationOnScreen(loc);
+                    float rx = ev.getRawX(), ry = ev.getRawY();
+                    if (rx >= loc[0] && rx <= loc[0] + seekBar.getWidth()
+                            && ry >= loc[1] - 24 && ry <= loc[1] + seekBar.getHeight() + 24) {
+                        onSeekBar = true;
+                    }
+                }
+                swipeStartX = ev.getX();
+                swipeStartY = ev.getY();
+                swipeTracking = !onSeekBar;
+                swipeTriggered = false;
+            } else if (action == android.view.MotionEvent.ACTION_MOVE && swipeTracking && !swipeTriggered) {
+                float dx = ev.getX() - swipeStartX;
+                float dy = ev.getY() - swipeStartY;
+                float thresh = UiKit.dp(this, 70);
+                if (Math.abs(dx) > thresh && Math.abs(dx) > Math.abs(dy) * 1.6f) {
+                    swipeTriggered = true;
+                    android.view.MotionEvent cancelEv = android.view.MotionEvent.obtain(ev);
+                    cancelEv.setAction(android.view.MotionEvent.ACTION_CANCEL);
+                    super.dispatchTouchEvent(cancelEv);
+                    cancelEv.recycle();
+                    nudgePlayhead(dx < 0 ? -5000L : 5000L);
+                    return true;
+                }
+            } else if (action == android.view.MotionEvent.ACTION_UP || action == android.view.MotionEvent.ACTION_CANCEL) {
+                swipeTracking = false;
+                swipeTriggered = false;
+            }
+        } else {
+            swipeTracking = false;
+            swipeTriggered = false;
+        }
+        return super.dispatchTouchEvent(ev);
+    }
+
+    @Override
     public void onBackPressed() {
+        if (activeFeatureId == 2) {
+            clearLiveSfxSession();
+        } else {
+            StudioGudangAudioManager.stopPreview();
+        }
         if (activeFeatureId != FEATURE_HUB) {
             releasePlayer();
             activeFeatureId = FEATURE_HUB;
@@ -279,9 +321,23 @@ public class AudioEditorStudioActivity extends Activity {
     }
 
     private void openFeature(int featureId) {
+        if (activeFeatureId == 2 && featureId != 2) {
+            clearLiveSfxSession();
+        } else {
+            StudioGudangAudioManager.stopPreview();
+        }
         releasePlayer();
         activeFeatureId = featureId;
         renderCurrentScreen();
+    }
+
+    private void clearLiveSfxSession() {
+        StudioGudangAudioManager.stopPreview();
+        DramaSoundPaletteHelper.stopAllLoopPlayers(liveSfxCues);
+        liveSfxCues.clear();
+        sfxUndoStack.clear();
+        sfxRedoStack.clear();
+        paletteController = null;
     }
 
     private void renderCurrentScreen() {
@@ -568,11 +624,7 @@ public class AudioEditorStudioActivity extends Activity {
         Button btnBack = UiKit.makeMenuButton(this,
                 "Kembali ke Daftar Semua Fitur Studio Audio",
                 "Menutup halaman fitur ini dan kembali ke menu utama Studio Editor Audio.",
-                UiKit.surfaceAlt(uiPrefs), uiPrefs, v -> {
-                    releasePlayer();
-                    activeFeatureId = FEATURE_HUB;
-                    renderCurrentScreen();
-                });
+                UiKit.surfaceAlt(uiPrefs), uiPrefs, v -> onBackPressed());
         btnBack.setTextColor(UiKit.textPrimary(uiPrefs));
         box.addView(btnBack);
 
@@ -652,28 +704,26 @@ public class AudioEditorStudioActivity extends Activity {
         });
         card.addView(seekBar);
 
-        // Hanya 3 Tombol Kontrol Simpel: Mundur | Putar / Jeda | Maju
-        int alt = UiKit.surfaceAlt(uiPrefs), txt = UiKit.textPrimary(uiPrefs);
+        // Pemutar Simpel Tanpa Tombol Mundur/Maju (Cukup Putar/Jeda + Geser Kiri Mundur / Geser Kanan Maju)
+        int txt = UiKit.textPrimary(uiPrefs);
         LinearLayout ctrl = new LinearLayout(this);
         ctrl.setOrientation(LinearLayout.HORIZONTAL);
-        ctrl.setPadding(0, UiKit.dp(this, 4), 0, UiKit.dp(this, 4));
-
-        ctrl.addView(OfficeUtils.makeRowButton(this,
-                "Mundur",
-                "Geser posisi putar mundur",
-                alt, txt, v -> nudgePlayhead(-4000L)));
+        ctrl.setPadding(0, UiKit.dp(this, 4), 0, UiKit.dp(this, 2));
 
         btnPlayPause = OfficeUtils.makeRowButton(this,
                 "Putar",
-                "Putar atau jeda audio (otomatis memutar bagian yang ditandai atau beserta efek yang dipasang)",
+                "Putar atau jeda audio. Geser layar ke kiri untuk mundur 5 detik, geser layar ke kanan untuk maju 5 detik.",
                 UiKit.ACCENT_OFFICE, Color.WHITE, v -> toggleSinglePlayPause());
         ctrl.addView(btnPlayPause);
-
-        ctrl.addView(OfficeUtils.makeRowButton(this,
-                "Maju",
-                "Geser posisi putar maju",
-                alt, txt, v -> nudgePlayhead(4000L)));
         card.addView(ctrl);
+
+        TextView swipeHint = new TextView(this);
+        swipeHint.setText("Geser Kiri = Mundur 5 detik  •  Geser Kanan = Maju 5 detik");
+        swipeHint.setTextSize(12);
+        swipeHint.setTextColor(UiKit.textMuted(uiPrefs));
+        swipeHint.setGravity(Gravity.CENTER);
+        swipeHint.setPadding(0, 0, 0, UiKit.dp(this, 4));
+        card.addView(swipeHint);
 
         if (includeCutUndoRedo) {
             card.addView(UiKit.makeSectionLabel(this, "B. TANDAI TITIK POTONG SAMBIL PUTAR + UNDO / REDO", UiKit.ACCENT_WARM));
@@ -990,138 +1040,110 @@ public class AudioEditorStudioActivity extends Activity {
     // ==================== FITUR 2: STUDIO EFEK DRAMA/FILM & BACKSOUND SAMBIL PUTAR (LIVE SFX + UNDO/REDO) ====================
 
     private void renderLiveDramaSfxStudioScreen() {
+        LinearLayout outer = new LinearLayout(this);
+        outer.setOrientation(LinearLayout.VERTICAL);
+        outer.setBackgroundColor(UiKit.bg(uiPrefs));
+
         ScrollView sv = new ScrollView(this);
         sv.setBackgroundColor(UiKit.bg(uiPrefs));
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         int p = UiKit.dp(this, 12);
-        root.setPadding(p, p, p, p);
+        root.setPadding(p, p, p, UiKit.dp(this, 16));
 
-        root.addView(buildSubHeaderAndBack("Studio Efek Suara Drama/Film & Backsound Sambil Putar"));
+        root.addView(buildSubHeaderAndBack("Studio Efek Drama/Film, Kartun & Backsound"));
         root.addView(MediaEditorCatalog.makeGuideCard(this, uiPrefs,
-                "Cara Pasang Efek Film & Backsound Sambil Putar (Langsung Terdengar + Undo/Redo)",
-                "1. Pilih audio utama lalu tekan tombol Putar di bagian atas.\n"
-                        + "2. Saat audio sedang berputar dan sampai di adegan yang diinginkan, langsung klik tombol efek di bawah (misal Kaca Pecah, Tabrakan Mobil, Ledakan, Pukulan, Petir, atau Backsound).\n"
-                        + "3. Efek otomatis tertempel di detik tersebut! Saat Anda menekan Putar di atas, semua efek langsung ikut berbunyi tepat pada detiknya. Salah tempel tinggal klik Undo.",
-                "Cocok untuk mengedit drama audio, sandiwara, podcast bercerita, atau naskah novel."));
+                "Panduan Singkat Efek & Backsound",
+                "1. Pilih audio utama lalu tekan Putar (geser kiri = mundur 5 detik, geser kanan = maju 5 detik).\n"
+                        + "2. Ketuk 'Kategori' -> pilih Efek Singkat atau Backsound Musik.\n"
+                        + "3. Untuk Efek: tekan Putar untuk tes, lalu centang pas di detik target!\n"
+                        + "4. Untuk Backsound: centang lagu di detik target (otomatis jalan sampai akhir), atau pakai Tandai Awal / Tandai Akhir di baris lagu itu.\n"
+                        + "5. Setelah beres, ketuk tombol 'Mulai Konversi Audio' yang selalu terkunci di pojok kanan bawah layar.",
+                "Semua daftar di satu guliran halus; tombol konversi terkunci di kanan bawah layar."));
 
         root.addView(buildSimplePlayerAndCutCard(false));
 
-        // Tombol Undo & Redo Efek
-        LinearLayout undoCard = UiKit.makeCard(this, uiPrefs);
-        undoCard.addView(UiKit.makeSectionLabel(this, "B. KONTROL UNDO / REDO & TOMBOL TEMPEL EFEK FILM DETIK INI", UiKit.ACCENT_WARM));
+        final TextView tvFooterInfo = new TextView(this);
+        tvFooterInfo.setTextSize(13f);
+        tvFooterInfo.setTypeface(null, Typeface.BOLD);
+        tvFooterInfo.setTextColor(UiKit.textPrimary(uiPrefs));
+        tvFooterInfo.setText("Terpasang: " + liveSfxCues.size() + " item");
 
-        LinearLayout urRow = new LinearLayout(this);
-        urRow.setOrientation(LinearLayout.HORIZONTAL);
-        urRow.setPadding(0, 0, 0, UiKit.dp(this, 6));
-        urRow.addView(OfficeUtils.makeRowButton(this,
-                "Undo Efek Terakhir (" + sfxUndoStack.size() + ")",
-                "Batalkan penambahan efek suara atau backsound terakhir",
-                UiKit.ACCENT_WARM, Color.WHITE, v -> performSfxUndo()));
-        urRow.addView(OfficeUtils.makeRowButton(this,
-                "Redo Efek (" + sfxRedoStack.size() + ")",
-                "Kembalikan efek suara yang baru saja dibatalkan",
-                UiKit.ACCENT_AI, Color.WHITE, v -> performSfxRedo()));
-        urRow.addView(OfficeUtils.makeRowButton(this,
-                "Reset Semua",
-                "Bersihkan seluruh efek yang ditempel",
-                UiKit.ACCENT_DANGER, Color.WHITE, v -> {
+        if (paletteController == null) {
+            paletteController = new DramaSoundPaletteHelper.Controller(
+                    this, uiPrefs, new DramaSoundPaletteHelper.Host() {
+                @Override public long getPlayheadMs() { return AudioEditorStudioActivity.this.getPlayheadMs(); }
+                @Override public long getTotalDurationMs() { return singleMeta.durationMs; }
+                @Override public void playTransitionFromMs(long cueAtMs) { playTransitionPreviewAt(cueAtMs); }
+                @Override public void stopPlaybackForPreviewSwitch() { if (isPlaying) toggleSinglePlayPause(); }
+                @Override public void triggerOneShotCue(DramaSoundPaletteHelper.CueItem cue) { triggerOneCuePreview(cue); }
+                @Override public void onPickAudioFromPhone() {
+                    UiKit.dialog(AudioEditorStudioActivity.this, uiPrefs)
+                            .setTitle("Pilih Audio dari Penyimpanan HP")
+                            .setItems(new String[]{"Buka File Manager Aplikasi", "Buka Galeri / Pemilih Sistem Android"}, (d, w) -> {
+                                if (w == 0) OfficeUtils.launchFilePicker(AudioEditorStudioActivity.this, REQ_PICK_LIVE_SFX_FM, "audio", "Pilih Efek / Backsound dari HP");
+                                else launchSystemPicker("audio/*", REQ_PICK_LIVE_SFX_SYS);
+                            }).show();
+                }
+                @Override public void onPaletteAppliedCue(DramaSoundPaletteHelper.CueItem addedOrNull) {
+                    if (addedOrNull != null) {
+                        Toast.makeText(AudioEditorStudioActivity.this,
+                                "Terpasang: " + addedOrNull.title + " pada " + AudioDspEngine.formatMsShort(addedOrNull.atMs),
+                                Toast.LENGTH_SHORT).show();
+                    }
+                }
+                @Override public void onCuesChanged(int totalCount) {
+                    tvFooterInfo.setText("Terpasang: " + totalCount + " item");
+                }
+                @Override public void onUndoRequested() { performSfxUndo(); }
+                @Override public void onRedoRequested() { performSfxRedo(); }
+                @Override public void onResetAllRequested() {
                     if (!liveSfxCues.isEmpty()) {
                         pushSfxUndoSnapshot();
+                        DramaSoundPaletteHelper.stopAllLoopPlayers(liveSfxCues);
                         liveSfxCues.clear();
-                        renderCurrentScreen();
+                        refreshLiveSfxUiInPlace();
                     }
-                }));
-        undoCard.addView(urRow);
-
-        // Tombol Pilih Semua Kategori Backsound 1-2 Menit & Efek Film dari Gudang atau Memori HP
-        undoCard.addView(UiKit.makeMenuButton(this,
-                "Pilih Backsound Musik (Islami, Piano, Jazz, Rock, Jedag-Jedug, Tegang) atau Efek di Detik Ini",
-                "Membuka daftar kategori lengkap dari Studio Gudang Aplikasi maupun dari Memori HP untuk ditempel pada detik pemutar saat ini.",
-                UiKit.ACCENT_AI, uiPrefs, v -> {
-                    final long triggerAt = getPlayheadMs();
-                    StudioGudangAudioManager.showUniversalAudioSourceChooser(
-                            this, uiPrefs, "Pasang Efek / Backsound di Detik " + AudioDspEngine.formatMsShort(triggerAt),
-                            true, true,
-                            (uri, title, durSec, isBacksound) -> addLiveSfxCueAt(uri, title, isBacksound ? 0L : triggerAt, isBacksound ? 0.30f : 1.0f, isBacksound),
-                            () -> OfficeUtils.launchFilePicker(this, REQ_PICK_LIVE_SFX_FM, "audio", "Pilih Efek / Backsound dari HP"),
-                            () -> launchSystemPicker("audio/*", REQ_PICK_LIVE_SFX_SYS));
-                }));
-
-        // Tombol Cepat 1-Klik Efek Film Populer (Sambil Play langsung klik!)
-        undoCard.addView(UiKit.makeSectionLabel(this, "KLIK CEPAT EFEK DRAMA & FILM DI DETIK BERJALAN:", UiKit.ACCENT_OFFICE));
-        String[][] quickSfx = {
-                {"sfx_glass_shatter", "Kaca Pecah"},
-                {"sfx_car_crash", "Tabrakan Mobil"},
-                {"sfx_tire_screech", "Rem & Tabrakan"},
-                {"sfx_big_explosion", "Ledakan Besar"},
-                {"sfx_heavy_punch", "Pukulan Tinju"},
-                {"sfx_martial_kick", "Tendangan Action"},
-                {"sfx_slap", "Tamparan Drama"},
-                {"sfx_sword_slash", "Tebasan Pedang"},
-                {"sfx_gunshot", "Tembakan Pistol"},
-                {"sfx_jumpscare", "Kejutan Horor"},
-                {"sfx_cinematic_boom", "Dentuman Boom"},
-                {"sfx_thunder", "Petir Menggelegar"},
-                {"sfx_creaky_door", "Pintu Horor"},
-                {"sfx_heartbeat", "Detak Jantung"},
-                {"sfx_whoosh", "Transisi Whoosh"},
-                {"sfx_applause", "Tepuk Tangan"},
-                {"sfx_censor_beep", "Sensor Beep"},
-                {"sfx_correct_ding", "Ding Benar"}
-        };
-        for (int i = 0; i < quickSfx.length; i += 2) {
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            for (int j = i; j < Math.min(quickSfx.length, i + 2); j++) {
-                final String sfxId = quickSfx[j][0];
-                final String sfxLabel = quickSfx[j][1];
-                row.addView(OfficeUtils.makeRowButton(this,
-                        "+ " + sfxLabel,
-                        "Tempel efek " + sfxLabel + " tepat di detik pemutar sekarang",
-                        (j % 2 == 0) ? UiKit.ACCENT_KB : UiKit.ACCENT_KB_ALT, Color.WHITE, v -> {
-                            final long at = getPlayheadMs();
-                            final StudioGudangAudioManager.GudangItem gItem = StudioGudangAudioManager.findById(sfxId);
-                            if (gItem != null) {
-                                StudioGudangAudioManager.materializeItemAsync(this, gItem, file ->
-                                        addLiveSfxCueAt(Uri.fromFile(file), gItem.title, at, 1.0f, false));
-                            }
-                        }));
-            }
-            undoCard.addView(row);
+                }
+                @Override public int getUndoCount() { return sfxUndoStack.size(); }
+                @Override public int getRedoCount() { return sfxRedoStack.size(); }
+            }, liveSfxCues, sfxUndoStack, sfxRedoStack);
         }
-        root.addView(undoCard);
-
-        // Daftar Efek & Backsound yang Sudah Ditempel
-        liveSfxListContainer = new LinearLayout(this);
-        liveSfxListContainer.setOrientation(LinearLayout.VERTICAL);
-        root.addView(liveSfxListContainer);
-        rebuildLiveSfxListUi();
+        paletteController.mountInto(root);
 
         root.addView(buildExportFormatCard());
 
-        LinearLayout saveCard = UiKit.makeCard(this, uiPrefs);
-        saveCard.addView(UiKit.makeMenuButton(this,
-                "Simpan & Gabungkan Semua Efek / Backsound ke Audio Sekarang",
-                "Merender audio utama beserta seluruh efek suara film dan backsound musik pada detik yang telah ditempel (backsound otomatis dipotong mengikuti durasi audio utama).",
-                UiKit.ACCENT_OFFICE, uiPrefs, v -> executeRenderLiveSfxMix()));
-        root.addView(saveCard);
-
         sv.addView(root);
-        setContentView(sv);
+        outer.addView(sv, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        // Pinned Footer Bar di paling bawah layar — tombol Konversi dikunci di sebelah kanan bawah!
+        LinearLayout footerBar = new LinearLayout(this);
+        footerBar.setOrientation(LinearLayout.HORIZONTAL);
+        footerBar.setGravity(Gravity.CENTER_VERTICAL);
+        footerBar.setPadding(UiKit.dp(this, 12), UiKit.dp(this, 10), UiKit.dp(this, 12), UiKit.dp(this, 10));
+        footerBar.setBackgroundColor(UiKit.surfaceAlt(uiPrefs));
+
+        footerBar.addView(tvFooterInfo, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        Button btnConvertPinned = new Button(this);
+        btnConvertPinned.setAllCaps(false);
+        btnConvertPinned.setText("Mulai Konversi Audio");
+        btnConvertPinned.setContentDescription("Mulai konversi dan gabungkan semua efek suara dan backsound ke audio sekarang");
+        btnConvertPinned.setTextSize(13.5f);
+        btnConvertPinned.setTypeface(null, Typeface.BOLD);
+        btnConvertPinned.setTextColor(Color.WHITE);
+        btnConvertPinned.setBackground(UiKit.roundedBox(UiKit.ACCENT_OFFICE, Color.TRANSPARENT, UiKit.dp(this, 10), 0));
+        btnConvertPinned.setPadding(UiKit.dp(this, 16), UiKit.dp(this, 10), UiKit.dp(this, 16), UiKit.dp(this, 10));
+        btnConvertPinned.setOnClickListener(v -> executeRenderLiveSfxMix());
+        footerBar.addView(btnConvertPinned, new LinearLayout.LayoutParams(-2, -2));
+
+        outer.addView(footerBar, new LinearLayout.LayoutParams(-1, -2));
+        setContentView(outer);
     }
 
-    private ArrayList<LiveSfxCue> cloneCueList(List<LiveSfxCue> src) {
-        ArrayList<LiveSfxCue> out = new ArrayList<>();
-        for (LiveSfxCue c : src) {
-            LiveSfxCue copy = new LiveSfxCue();
-            copy.uri = c.uri;
-            copy.title = c.title;
-            copy.atMs = c.atMs;
-            copy.volume = c.volume;
-            copy.isBacksoundLoop = c.isBacksoundLoop;
-            out.add(copy);
-        }
+    private ArrayList<DramaSoundPaletteHelper.CueItem> cloneCueList(List<DramaSoundPaletteHelper.CueItem> src) {
+        ArrayList<DramaSoundPaletteHelper.CueItem> out = new ArrayList<>();
+        for (DramaSoundPaletteHelper.CueItem c : src) out.add(c.copy());
         return out;
     }
 
@@ -1130,77 +1152,70 @@ public class AudioEditorStudioActivity extends Activity {
         sfxRedoStack.clear();
     }
 
-    private void addLiveSfxCueAt(Uri uri, String title, long atMs, float vol, boolean isBgm) {
-        pushSfxUndoSnapshot();
-        LiveSfxCue cue = new LiveSfxCue();
-        cue.uri = uri;
-        cue.title = title;
-        cue.atMs = Math.max(0L, atMs);
-        cue.volume = vol;
-        cue.isBacksoundLoop = isBgm;
-        liveSfxCues.add(cue);
-        // Bunyikan langsung efeknya saat ditempel!
-        triggerOneCuePreview(cue);
-        Toast.makeText(this, "Ditempel pada " + AudioDspEngine.formatMsShort(cue.atMs) + ": " + title, Toast.LENGTH_SHORT).show();
-        if (activeFeatureId == 2) renderCurrentScreen();
+    /**
+     * Logika Transisi Edit Enak:
+     * Jika efek/backsound ditempel di detik ke-15, otomatis mundur 2 detik ke detik ke-13 (atau detik 0 jika di awal)
+     * lalu langsung memutar melewati detik ke-15 dan terus lanjut hingga pengguna menekan Jeda.
+     */
+    private void playTransitionPreviewAt(long cueAtMs) {
+        if (singleUri == null) return;
+        if (player == null) ensurePlayerPreparedFor(singleUri);
+        if (player == null) return;
+        long preRollMs = Math.max(0L, cueAtMs - 2000L);
+        try {
+            stopAllCuePlayers();
+            for (DramaSoundPaletteHelper.CueItem c : liveSfxCues) {
+                if (c.atMs >= preRollMs) {
+                    c.lastTriggeredPlaybackMs = -5000L;
+                }
+            }
+            player.seekTo((int) preRollMs);
+            lastTickerPosMs = preRollMs - 50L;
+            if (!isPlaying) {
+                player.start();
+                isPlaying = true;
+                if (btnPlayPause != null) btnPlayPause.setText("Jeda");
+            }
+            DramaSoundPaletteHelper.syncCuesWithPlayhead(this, liveSfxCues, lastTickerPosMs, preRollMs, true);
+            mainHandler.removeCallbacks(ticker);
+            mainHandler.post(ticker);
+            updatePlayheadUi();
+        } catch (Throwable ignored) {}
+    }
+
+    private void refreshLiveSfxUiInPlace() {
+        if (paletteController != null) paletteController.refreshAllInPlace();
     }
 
     private void performSfxUndo() {
         if (sfxUndoStack.isEmpty()) {
-            Toast.makeText(this, "Tidak ada efek untuk di-Undo.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Tidak ada langkah untuk di-Undo.", Toast.LENGTH_SHORT).show();
             return;
         }
         sfxRedoStack.add(cloneCueList(liveSfxCues));
-        ArrayList<LiveSfxCue> prev = sfxUndoStack.remove(sfxUndoStack.size() - 1);
+        DramaSoundPaletteHelper.stopAllLoopPlayers(liveSfxCues);
+        ArrayList<DramaSoundPaletteHelper.CueItem> prev = sfxUndoStack.remove(sfxUndoStack.size() - 1);
         liveSfxCues.clear();
         liveSfxCues.addAll(prev);
-        Toast.makeText(this, "Undo efek berhasil. Tersisa " + liveSfxCues.size() + " efek.", Toast.LENGTH_SHORT).show();
-        renderCurrentScreen();
+        Toast.makeText(this, "Undo / Nggak Jadi berhasil. Tersisa " + liveSfxCues.size() + " item.", Toast.LENGTH_SHORT).show();
+        refreshLiveSfxUiInPlace();
     }
 
     private void performSfxRedo() {
         if (sfxRedoStack.isEmpty()) {
-            Toast.makeText(this, "Tidak ada efek untuk di-Redo.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Tidak ada langkah untuk di-Redo.", Toast.LENGTH_SHORT).show();
             return;
         }
         sfxUndoStack.add(cloneCueList(liveSfxCues));
-        ArrayList<LiveSfxCue> next = sfxRedoStack.remove(sfxRedoStack.size() - 1);
+        DramaSoundPaletteHelper.stopAllLoopPlayers(liveSfxCues);
+        ArrayList<DramaSoundPaletteHelper.CueItem> next = sfxRedoStack.remove(sfxRedoStack.size() - 1);
         liveSfxCues.clear();
         liveSfxCues.addAll(next);
-        Toast.makeText(this, "Redo efek berhasil. Total " + liveSfxCues.size() + " efek.", Toast.LENGTH_SHORT).show();
-        renderCurrentScreen();
+        Toast.makeText(this, "Redo berhasil. Total " + liveSfxCues.size() + " item.", Toast.LENGTH_SHORT).show();
+        refreshLiveSfxUiInPlace();
     }
 
-    private void rebuildLiveSfxListUi() {
-        if (liveSfxListContainer == null) return;
-        liveSfxListContainer.removeAllViews();
-        LinearLayout card = UiKit.makeCard(this, uiPrefs);
-        card.addView(UiKit.makeSectionLabel(this, "C. DAFTAR EFEK & BACKSOUND TERPASANG (" + liveSfxCues.size() + " ITEM)", UiKit.ACCENT_KB));
-        if (liveSfxCues.isEmpty()) {
-            TextView tv = new TextView(this);
-            tv.setText("Belum ada efek atau backsound ditempel. Putar audio di atas lalu klik tombol efek pada detik yang diinginkan.");
-            tv.setTextColor(UiKit.textMuted(uiPrefs));
-            card.addView(tv);
-            liveSfxListContainer.addView(card);
-            return;
-        }
-        for (int i = 0; i < liveSfxCues.size(); i++) {
-            final int idx = i;
-            final LiveSfxCue c = liveSfxCues.get(i);
-            String tag = c.isBacksoundLoop ? "[Backsound Musik Latar]" : ("Detik " + AudioDspEngine.formatMs(c.atMs));
-            card.addView(UiKit.makeMenuButton(this,
-                    (i + 1) + ". " + tag + " — " + c.title + " (Vol " + Math.round(c.volume * 100) + "%)",
-                    "Ketuk untuk menghapus efek ini atau gunakan tombol Undo di atas.",
-                    UiKit.surfaceAlt(uiPrefs), uiPrefs, v -> {
-                        pushSfxUndoSnapshot();
-                        liveSfxCues.remove(idx);
-                        renderCurrentScreen();
-                    }));
-        }
-        liveSfxListContainer.addView(card);
-    }
-
-    private void triggerOneCuePreview(LiveSfxCue cue) {
+    private void triggerOneCuePreview(DramaSoundPaletteHelper.CueItem cue) {
         try {
             final MediaPlayer mp = new MediaPlayer();
             mp.setDataSource(this, cue.uri);
@@ -1216,6 +1231,7 @@ public class AudioEditorStudioActivity extends Activity {
     }
 
     private void stopAllCuePlayers() {
+        DramaSoundPaletteHelper.stopAllLoopPlayers(liveSfxCues);
         for (MediaPlayer mp : new ArrayList<>(activeCuePlayers)) {
             try { if (mp.isPlaying()) mp.stop(); } catch (Throwable ignored) {}
             try { mp.release(); } catch (Throwable ignored) {}
@@ -1235,12 +1251,13 @@ public class AudioEditorStudioActivity extends Activity {
         mainTrack.loop = false;
         tracks.add(mainTrack);
 
-        for (LiveSfxCue c : liveSfxCues) {
+        for (DramaSoundPaletteHelper.CueItem c : liveSfxCues) {
             AudioDspEngine.MixTrackSpec tr = new AudioDspEngine.MixTrackSpec();
             tr.uri = c.uri;
             tr.title = c.title;
             tr.volume = c.volume;
             tr.delayMs = c.atMs;
+            tr.endMs = c.endMs;
             tr.loop = c.isBacksoundLoop;
             tracks.add(tr);
         }
@@ -1465,19 +1482,24 @@ public class AudioEditorStudioActivity extends Activity {
         card.addView(UiKit.makeSectionLabel(this, "PILIH TINGKAT KOMPRESI UKURAN AUDIO", UiKit.ACCENT_KB_ALT));
 
         card.addView(UiKit.makeMenuButton(this,
-                "1. Kompres Ekstra Kecil (MP3 64 kbps Mono 24000 Hz — Hemat 75% Ukuran)",
-                "Sangat ringan untuk rekaman ceramah, kuliah, atau voice note panjang agar cepat dikirim di WhatsApp.",
-                UiKit.ACCENT_OFFICE, uiPrefs, v -> runQuickCompress("mp3", 64, 24000, 1, "Kompres64kbps")));
+                "1. Kompres Vokal Jernih (M4A/AAC 64 kbps Mono — ~480 KB/menit, Seperti Ori)",
+                "Ukuran super ringan (< 0,5 MB/menit) dengan kejernihan vokal tetap utuh seperti aslinya untuk TTS, ceramah, & WhatsApp.",
+                UiKit.ACCENT_AI, uiPrefs, v -> runQuickCompress("m4a", 64, 24000, 1, "KompresM4A64k")));
 
         card.addView(UiKit.makeMenuButton(this,
-                "2. Kompres Seimbang Jernih (MP3 96 kbps Stereo 44100 Hz — Hemat 55% Ukuran)",
-                "Ukuran berkas ringan dengan kualitas stereo yang tetap jernih untuk podcast dan musik.",
-                UiKit.ACCENT_KB, uiPrefs, v -> runQuickCompress("mp3", 96, 44100, 2, "Kompres96kbps")));
+                "2. Kompres Seimbang Musik & Suara (M4A/AAC 96 kbps Stereo — ~720 KB/menit)",
+                "Ukuran di bawah 1 MB/menit dengan detail musik & vokal stereo tetap jernih seperti kualitas studio.",
+                UiKit.ACCENT_KB, uiPrefs, v -> runQuickCompress("m4a", 96, 44100, 2, "KompresM4A96k")));
 
         card.addView(UiKit.makeMenuButton(this,
-                "3. Kompres Voice Super Ringan (OPUS 64 kbps — Format Modern Paling Efisien)",
-                "Kompresi format OPUS dengan kejernihan tinggi pada ukuran berkas terkecil.",
-                UiKit.ACCENT_AI, uiPrefs, v -> runQuickCompress("opus", 64, 48000, 1, "KompresOpus")));
+                "3. Kompres Voice Super Ringan (OPUS 48 kbps — Format Modern Paling Kecil)",
+                "Kompresi format OPUS 48 kbps (~360 KB/menit) dengan kejernihan vokal maksimal di ukuran terkecil.",
+                UiKit.ACCENT_OFFICE, uiPrefs, v -> runQuickCompress("opus", 48, 48000, 1, "KompresOpus")));
+
+        card.addView(UiKit.makeMenuButton(this,
+                "4. Kompres MP3 Universal (MP3 96 kbps Stereo 44100 Hz)",
+                "Kompatibel di seluruh pemutar MP3 lawas dengan ukuran tetap ringan.",
+                UiKit.ACCENT_KB_ALT, uiPrefs, v -> runQuickCompress("mp3", 96, 44100, 2, "KompresMP396k")));
 
         root.addView(card);
         sv.addView(root);
@@ -2853,16 +2875,14 @@ public class AudioEditorStudioActivity extends Activity {
                     player.seekTo((int) startBound);
                     cur = startBound;
                 }
-                lastTickerPosMs = cur;
-                for (LiveSfxCue cue : liveSfxCues) {
+                lastTickerPosMs = cur - 50L;
+                for (DramaSoundPaletteHelper.CueItem cue : liveSfxCues) {
                     cue.lastTriggeredPlaybackMs = -5000L;
-                    if (cue.isBacksoundLoop) {
-                        triggerOneCuePreview(cue);
-                    }
                 }
                 player.start();
                 isPlaying = true;
                 if (btnPlayPause != null) btnPlayPause.setText("Jeda");
+                DramaSoundPaletteHelper.syncCuesWithPlayhead(this, liveSfxCues, lastTickerPosMs, cur, true);
                 mainHandler.removeCallbacks(ticker);
                 mainHandler.post(ticker);
             } catch (Throwable ignored) {}
@@ -2900,8 +2920,14 @@ public class AudioEditorStudioActivity extends Activity {
         if (singleUri == null) return;
         if (player == null) ensurePlayerPreparedFor(singleUri);
         long t = Math.max(0L, Math.min(singleMeta.durationMs, getPlayheadMs() + deltaMs));
+        for (DramaSoundPaletteHelper.CueItem cue : liveSfxCues) {
+            if (cue.atMs >= t) cue.lastTriggeredPlaybackMs = -5000L;
+        }
         seekAbsolute(t);
-        OfficeUtils.announce(tvPlayPos, "Posisi " + AudioDspEngine.formatMsShort(t));
+        if (isPlaying) {
+            DramaSoundPaletteHelper.syncCuesWithPlayhead(this, liveSfxCues, t - 50L, t, true);
+        }
+        OfficeUtils.announce(tvPlayPos, (deltaMs < 0 ? "Mundur ke " : "Maju ke ") + AudioDspEngine.formatMsShort(t));
     }
 
     private void updatePlayheadUi() {
@@ -2921,9 +2947,10 @@ public class AudioEditorStudioActivity extends Activity {
             pos = activeInMs;
         }
 
-        // 2. Bunyikan Live SFX Cues yang dilewati playhead saat sedang Play
+        // 2. Bunyikan Live SFX & Backsound Cues yang dilewati playhead saat sedang Play
         if (isPlaying && activeFeatureId == 2 && !liveSfxCues.isEmpty()) {
-            for (LiveSfxCue cue : liveSfxCues) {
+            DramaSoundPaletteHelper.syncCuesWithPlayhead(this, liveSfxCues, lastTickerPosMs, pos, true);
+            for (DramaSoundPaletteHelper.CueItem cue : liveSfxCues) {
                 if (cue.isBacksoundLoop) continue;
                 if (pos >= cue.atMs && lastTickerPosMs < cue.atMs && Math.abs(pos - cue.lastTriggeredPlaybackMs) > 400L) {
                     cue.lastTriggeredPlaybackMs = pos;
@@ -3086,8 +3113,17 @@ public class AudioEditorStudioActivity extends Activity {
             renderCurrentScreen();
             Toast.makeText(this, "Foto Cover dipilih: " + coverImageName, Toast.LENGTH_SHORT).show();
         } else if (requestCode == REQ_PICK_LIVE_SFX_FM || requestCode == REQ_PICK_LIVE_SFX_SYS) {
-            String name = AudioDspEngine.resolveDisplayName(this, uri);
-            addLiveSfxCueAt(uri, name, getPlayheadMs(), 1.0f, false);
+            final String name = AudioDspEngine.resolveDisplayName(this, uri);
+            UiKit.dialog(this, uiPrefs)
+                    .setTitle("Pasang \"" + name + "\" Sebagai Apa?")
+                    .setItems(new String[]{
+                            "1. Efek Suara (Tempel di Detik Pemutar Saat Ini)",
+                            "2. Backsound Musik (Ikuti Pilihan Mode Full / Detik Ini / Potong)"
+                    }, (d, w) -> {
+                        if (paletteController != null) {
+                            paletteController.addPhoneCue(uri, name, w == 1);
+                        }
+                    }).show();
         }
     }
 

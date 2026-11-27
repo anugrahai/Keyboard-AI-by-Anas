@@ -56,6 +56,7 @@ public final class AudioDspEngine {
         public String title = "Audio";
         public float volume = 1.0f;    // 0.0 .. 2.5
         public long delayMs = 0L;
+        public long endMs = 0L;        // 0 = sampai akhir proyek; > delayMs = stop tepat pada detik endMs
         public boolean loop = false;
     }
 
@@ -204,8 +205,8 @@ public final class AudioDspEngine {
     }
 
     public static String codecArgsForOutput(String fmt, int bitrateKbps, int sampleRate, int channels) {
-        String lower = fmt == null ? "mp3" : fmt.toLowerCase(Locale.ROOT);
-        int br = Math.max(48, Math.min(320, bitrateKbps));
+        String lower = fmt == null ? "m4a" : fmt.toLowerCase(Locale.ROOT);
+        int br = Math.max(32, Math.min(320, bitrateKbps));
         int sr = sampleRate <= 0 ? 44100 : sampleRate;
         int ch = (channels == 1) ? 1 : 2;
         if ("mp3".equals(lower)) {
@@ -221,9 +222,29 @@ public final class AudioDspEngine {
             return "-vn -c:a libvorbis -b:a " + br + "k -ar " + sr + " -ac " + ch;
         }
         if ("opus".equals(lower)) {
-            return "-vn -c:a libopus -b:a " + br + "k -ar 48000 -ac " + ch;
+            return "-vn -c:a libopus -b:a " + br + "k -vbr on -compression_level 10 -application audio -ar 48000 -ac " + ch;
         }
-        return "-vn -c:a aac -b:a " + br + "k -ar " + sr + " -ac " + ch + " -movflags +faststart";
+        return "-vn -c:a aac -profile:a aac_low -b:a " + br + "k -ar " + sr + " -ac " + ch + " -movflags +faststart";
+    }
+
+    /**
+     * Mengompres berkas audio (mis. WAV mentah dari Gemini TTS) ke M4A/OPUS/MP3/WAV dengan filter
+     * pembersih sub-bass (<55 Hz) & anti-clipping agar ukuran sangat hemat namun vokal tetap jernih seperti ori.
+     */
+    public static void encodeAudioClean(
+            File inFile, File outFile, String outFmt, int bitrateKbps,
+            int sampleRate, int channels, boolean voiceClarityFilter
+    ) throws Exception {
+        String lower = outFmt == null ? "m4a" : outFmt.toLowerCase(Locale.ROOT);
+        String af = voiceClarityFilter
+                ? "-af \"highpass=f=55,alimiter=limit=0.95\" "
+                : "";
+        if ("wav".equals(lower)) {
+            af = voiceClarityFilter ? "-af \"highpass=f=55,alimiter=limit=0.95\" " : "";
+        }
+        String cmd = "-y -i " + q(inFile) + " " + af
+                + codecArgsForOutput(lower, bitrateKbps, sampleRate, channels) + " " + q(outFile);
+        runFfmpegOrThrow(cmd);
     }
 
     public static void runFfmpegOrThrow(String cmd) {
@@ -397,7 +418,18 @@ public final class AudioDspEngine {
             Context ctx, List<MixTrackSpec> tracks, File workDir, File outFile,
             boolean autoDuckingWithTrack1, String outFmt, int bitrateKbps
     ) throws Exception {
+        mixMultiTracks(ctx, tracks, workDir, outFile, autoDuckingWithTrack1, outFmt, bitrateKbps, 44100, 2);
+    }
+
+    public static void mixMultiTracks(
+            Context ctx, List<MixTrackSpec> tracks, File workDir, File outFile,
+            boolean autoDuckingWithTrack1, String outFmt, int bitrateKbps,
+            int sampleRate, int channels
+    ) throws Exception {
         if (tracks == null || tracks.isEmpty()) throw new IllegalArgumentException("Tambahkan minimal 1 track audio.");
+        int sr = sampleRate <= 0 ? 44100 : sampleRate;
+        int ch = (channels == 1) ? 1 : 2;
+        String chLayout = (ch == 1) ? "mono" : "stereo";
         List<File> tmpTemps = new ArrayList<>();
         List<File> matFiles = new ArrayList<>();
         try {
@@ -409,21 +441,33 @@ public final class AudioDspEngine {
             }
             if (tracks.size() == 1) {
                 MixTrackSpec t0 = tracks.get(0);
-                String cmd = "-y -i " + q(matFiles.get(0)) + " -filter:a \"volume=" + String.format(Locale.US, "%.2f", t0.volume) + "\" "
-                        + codecArgsForOutput(outFmt, bitrateKbps) + " " + q(outFile);
+                String cmd = "-y -i " + q(matFiles.get(0)) + " -filter:a \"volume=" + String.format(Locale.US, "%.2f", t0.volume) + ",alimiter=limit=0.95\" "
+                        + codecArgsForOutput(outFmt, bitrateKbps, sr, ch) + " " + q(outFile);
                 runFfmpegOrThrow(cmd);
                 return;
             }
+            AudioMeta mainMeta = inspectMedia(ctx, Uri.fromFile(matFiles.get(0)));
+            long mainDurMs = mainMeta.durationMs;
+
             StringBuilder inputs = new StringBuilder();
             StringBuilder fc = new StringBuilder();
             for (int i = 0; i < tracks.size(); i++) {
                 MixTrackSpec t = tracks.get(i);
                 if (i > 0 && t.loop) inputs.append("-stream_loop -1 ");
                 inputs.append("-i ").append(q(matFiles.get(i))).append(" ");
+                String trimStr = "";
+                if (i > 0 && t.endMs > t.delayMs) {
+                    long durLimit = t.endMs - t.delayMs;
+                    if (mainDurMs > 0) durLimit = Math.min(durLimit, Math.max(200L, mainDurMs - t.delayMs));
+                    trimStr = ",atrim=0:" + formatSecForFfmpeg(durLimit) + ",asetpts=PTS-STARTPTS";
+                } else if (i > 0 && t.loop && mainDurMs > 0) {
+                    long durLimit = Math.max(200L, mainDurMs - t.delayMs);
+                    trimStr = ",atrim=0:" + formatSecForFfmpeg(durLimit) + ",asetpts=PTS-STARTPTS";
+                }
                 String delayStr = t.delayMs > 0 ? (",adelay=" + t.delayMs + "|" + t.delayMs) : "";
                 fc.append(String.format(Locale.US,
-                        "[%d:a]aresample=44100:async=1,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=%.2f%s[tr%d];",
-                        i, t.volume, delayStr, i));
+                        "[%d:a]aresample=%d:async=1,aformat=sample_fmts=fltp:channel_layouts=%s%s,volume=%.2f%s[tr%d];",
+                        i, sr, chLayout, trimStr, t.volume, delayStr, i));
             }
             if (autoDuckingWithTrack1 && tracks.size() >= 2) {
                 // Track 1 sebagai sidechain pengontrol musik latar (track 2..N)
@@ -432,21 +476,22 @@ public final class AudioDspEngine {
                 if (tracks.size() == 2) {
                     fc.append("[tr0]asplit=2[vmain][vsc];");
                     fc.append("[tr1][vsc]sidechaincompress=threshold=0.03:ratio=5:attack=40:release=350[bgduck];");
-                    fc.append("[vmain][bgduck]amix=inputs=2:duration=first:normalize=0[outa]");
+                    fc.append("[vmain][bgduck]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[outa]");
                 } else {
                     fc.append(bgTags).append("amix=inputs=").append(tracks.size() - 1).append(":duration=first:normalize=0[bgall];");
                     fc.append("[tr0]asplit=2[vmain][vsc];");
                     fc.append("[bgall][vsc]sidechaincompress=threshold=0.03:ratio=5:attack=40:release=350[bgduck];");
-                    fc.append("[vmain][bgduck]amix=inputs=2:duration=first:normalize=0[outa]");
+                    fc.append("[vmain][bgduck]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[outa]");
                 }
             } else {
                 StringBuilder allTags = new StringBuilder();
                 for (int i = 0; i < tracks.size(); i++) allTags.append("[tr").append(i).append("]");
                 fc.append(allTags).append("amix=inputs=").append(tracks.size())
-                        .append(":duration=first:normalize=0[outa]");
+                        .append(":duration=first:normalize=0,alimiter=limit=0.95[outa]");
             }
+            String limitArg = mainDurMs > 0 ? ("-t " + formatSecForFfmpeg(mainDurMs) + " ") : "";
             String cmd = "-y " + inputs + "-filter_complex \"" + fc + "\" -map \"[outa]\" "
-                    + codecArgsForOutput(outFmt, bitrateKbps) + " " + q(outFile);
+                    + limitArg + codecArgsForOutput(outFmt, bitrateKbps, sr, ch) + " " + q(outFile);
             runFfmpegOrThrow(cmd);
         } finally {
             for (File t : tmpTemps) { try { t.delete(); } catch (Throwable ignored) {} }
@@ -622,7 +667,7 @@ public final class AudioDspEngine {
             else if ("1:1".equals(aspectRatio)) { outW = 1080; outH = 1080; }
             else if ("4:5".equals(aspectRatio)) { outW = 864; outH = 1080; }
 
-            int abr = Math.max(96, Math.min(320, audioBitrateKbps));
+            int abr = Math.max(64, Math.min(320, audioBitrateKbps));
 
             if (coverImageUri != null) {
                 inCover = materializeRawCopyIfContent(ctx, coverImageUri, workDir, "a2v_cov");
@@ -634,12 +679,12 @@ public final class AudioDspEngine {
                             "[0:v]scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,boxblur=18:2[bg];"
                                     + "[0:v]scale=%d:%d:force_original_aspect_ratio=decrease[fg];"
                                     + "[bg][fg]overlay=(W-w)/2:(H-h)/2[base];"
-                                    + "[1:a]showwaves=s=%dx%d:mode=cline:rate=25:colors=0x38BDF8[wv];"
+                                    + "[1:a]showwaves=s=%dx%d:mode=cline:rate=8:colors=0x38BDF8[wv];"
                                     + "[base][wv]overlay=0:H-%d,format=yuv420p[outv]",
                             outW, outH, outW, outH, outW, outH, outW, waveH, waveH + 24);
-                    String cmd = "-y -loop 1 -i " + q(inCover) + " -i " + q(inAudio)
+                    String cmd = "-y -loop 1 -r 8 -i " + q(inCover) + " -i " + q(inAudio)
                             + " -filter_complex \"" + fc + "\" -map \"[outv]\" -map 1:a "
-                            + "-c:v libx264 -preset veryfast -crf 22 -c:a aac -b:a " + abr + "k -shortest -movflags +faststart "
+                            + "-c:v libx264 -preset fast -crf 27 -g 40 -c:a aac -profile:a aac_low -b:a " + abr + "k -shortest -movflags +faststart "
                             + q(outMp4);
                     runFfmpegOrThrow(cmd);
                     return;
@@ -649,9 +694,9 @@ public final class AudioDspEngine {
                                     + "[0:v]scale=%d:%d:force_original_aspect_ratio=decrease[fg];"
                                     + "[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p[outv]",
                             outW, outH, outW, outH, outW, outH);
-                    String cmd = "-y -loop 1 -i " + q(inCover) + " -i " + q(inAudio)
+                    String cmd = "-y -loop 1 -r 5 -i " + q(inCover) + " -i " + q(inAudio)
                             + " -filter_complex \"" + vf + "\" -map \"[outv]\" -map 1:a "
-                            + "-c:v libx264 -preset veryfast -tune stillimage -crf 22 -c:a aac -b:a " + abr + "k -shortest -movflags +faststart "
+                            + "-c:v libx264 -preset fast -tune stillimage -crf 27 -g 25 -c:a aac -profile:a aac_low -b:a " + abr + "k -shortest -movflags +faststart "
                             + q(outMp4);
                     runFfmpegOrThrow(cmd);
                     return;
@@ -659,9 +704,9 @@ public final class AudioDspEngine {
                     vf = String.format(Locale.US,
                             "scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:black,setsar=1,format=yuv420p",
                             outW, outH, outW, outH);
-                    String cmd = "-y -loop 1 -i " + q(inCover) + " -i " + q(inAudio)
-                            + " -vf \"" + vf + "\" -c:v libx264 -preset veryfast -tune stillimage -crf 22 "
-                            + "-c:a aac -b:a " + abr + "k -shortest -movflags +faststart " + q(outMp4);
+                    String cmd = "-y -loop 1 -r 5 -i " + q(inCover) + " -i " + q(inAudio)
+                            + " -vf \"" + vf + "\" -c:v libx264 -preset fast -tune stillimage -crf 27 -g 25 "
+                            + "-c:a aac -profile:a aac_low -b:a " + abr + "k -shortest -movflags +faststart " + q(outMp4);
                     runFfmpegOrThrow(cmd);
                     return;
                 }
@@ -671,16 +716,16 @@ public final class AudioDspEngine {
             if ("solid_dark".equals(visualMode) || "solid_navy".equals(visualMode)) {
                 String hex = "solid_navy".equals(visualMode) ? "0x0F172A" : "0x111111";
                 String cmd = String.format(Locale.US,
-                        "-y -f lavfi -i color=c=%s:s=%dx%d:r=25 -i %s -c:v libx264 -preset ultrafast -tune stillimage -crf 24 -pix_fmt yuv420p -c:a aac -b:a %dk -shortest -movflags +faststart %s",
+                        "-y -f lavfi -i color=c=%s:s=%dx%d:r=5 -i %s -c:v libx264 -preset fast -tune stillimage -crf 28 -g 25 -pix_fmt yuv420p -c:a aac -profile:a aac_low -b:a %dk -shortest -movflags +faststart %s",
                         hex, outW, outH, q(inAudio), abr, q(outMp4));
                 runFfmpegOrThrow(cmd);
             } else {
                 String fc = String.format(Locale.US,
-                        "[0:a]showwaves=s=%dx%d:mode=cline:rate=25:colors=0x38BDF8|0xA855F7,format=yuv420p[outv]",
+                        "[0:a]showwaves=s=%dx%d:mode=cline:rate=8:colors=0x38BDF8|0xA855F7,format=yuv420p[outv]",
                         outW, outH);
                 String cmd = "-y -i " + q(inAudio)
                         + " -filter_complex \"" + fc + "\" -map \"[outv]\" -map 0:a "
-                        + "-c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a " + abr + "k -shortest -movflags +faststart "
+                        + "-c:v libx264 -preset fast -crf 28 -g 40 -c:a aac -profile:a aac_low -b:a " + Math.min(abr, 128) + "k -shortest -movflags +faststart "
                         + q(outMp4);
                 runFfmpegOrThrow(cmd);
             }

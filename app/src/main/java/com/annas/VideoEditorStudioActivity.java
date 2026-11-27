@@ -130,8 +130,8 @@ public class VideoEditorStudioActivity extends Activity {
 
     private int selectedResIdx = 2;     // 720p
     private int selectedFpsIdx = 2;     // 30 FPS
-    private int selectedCrfIdx = 2;     // CRF 23
-    private int selectedAudioBrIdx = 3; // 192 kbps
+    private int selectedCrfIdx = 3;     // CRF 26 (Hemat Ruang & Tajam)
+    private int selectedAudioBrIdx = 1; // 128 kbps (Jernih & Hemat)
 
     // Video utama aktif
     private Uri singleVideoUri;
@@ -165,21 +165,15 @@ public class VideoEditorStudioActivity extends Activity {
     private final ArrayList<CutState> cutUndoStack = new ArrayList<>();
     private final ArrayList<CutState> cutRedoStack = new ArrayList<>();
 
-    // State Studio Efek Film & Backsound Sambil Putar (Live Tap SFX + Undo/Redo)
-    private static final class LiveSfxCue {
-        Uri uri;
-        String title;
-        long atMs;
-        float volume;
-        boolean isBacksoundLoop;
-        long lastTriggeredPlaybackMs = -5000L;
-    }
-    private final ArrayList<LiveSfxCue> liveSfxCues = new ArrayList<>();
-    private final ArrayList<ArrayList<LiveSfxCue>> sfxUndoStack = new ArrayList<>();
-    private final ArrayList<ArrayList<LiveSfxCue>> sfxRedoStack = new ArrayList<>();
-    private LinearLayout liveSfxListContainer;
+    // State Studio Efek Film & Backsound Sambil Putar (Tab Centang + Live Play + Undo/Redo)
+    private final ArrayList<DramaSoundPaletteHelper.CueItem> liveSfxCues = new ArrayList<>();
+    private final ArrayList<ArrayList<DramaSoundPaletteHelper.CueItem>> sfxUndoStack = new ArrayList<>();
+    private final ArrayList<ArrayList<DramaSoundPaletteHelper.CueItem>> sfxRedoStack = new ArrayList<>();
+    private DramaSoundPaletteHelper.Controller paletteController;
     private final ArrayList<MediaPlayer> activeCuePlayers = new ArrayList<>();
     private long lastTickerPosMs = -1L;
+    private float swipeStartX = 0f, swipeStartY = 0f;
+    private boolean swipeTracking = false, swipeTriggered = false;
 
     // Gabung Banyak Video
     private static final class VidSlot {
@@ -236,8 +230,8 @@ public class VideoEditorStudioActivity extends Activity {
 
         selectedResIdx = Math.max(0, Math.min(RES_VALUES.length - 1, uiPrefs.getInt("ved_res_idx", 2)));
         selectedFpsIdx = Math.max(0, Math.min(FPS_VALUES.length - 1, uiPrefs.getInt("ved_fps_idx", 2)));
-        selectedCrfIdx = Math.max(0, Math.min(CRF_VALUES.length - 1, uiPrefs.getInt("ved_crf_idx", 2)));
-        selectedAudioBrIdx = Math.max(0, Math.min(AUDIO_BR_VALUES.length - 1, uiPrefs.getInt("ved_abr_idx", 3)));
+        selectedCrfIdx = Math.max(0, Math.min(CRF_VALUES.length - 1, uiPrefs.getInt("ved_crf_idx", 3)));
+        selectedAudioBrIdx = Math.max(0, Math.min(AUDIO_BR_VALUES.length - 1, uiPrefs.getInt("ved_abr_idx", 1)));
         syncRenderOptionsWithExportPrefs();
 
         workDir = new File(getCacheDir(), "ffmpeg_video_work");
@@ -277,7 +271,55 @@ public class VideoEditorStudioActivity extends Activity {
     }
 
     @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        if (activeFeatureId != FEATURE_HUB && singleVideoUri != null && ev.getPointerCount() == 1) {
+            int action = ev.getActionMasked();
+            if (action == android.view.MotionEvent.ACTION_DOWN) {
+                boolean onSeekBar = false;
+                if (videoSeek != null && videoSeek.getVisibility() == View.VISIBLE) {
+                    int[] loc = new int[2];
+                    videoSeek.getLocationOnScreen(loc);
+                    float rx = ev.getRawX(), ry = ev.getRawY();
+                    if (rx >= loc[0] && rx <= loc[0] + videoSeek.getWidth()
+                            && ry >= loc[1] - 24 && ry <= loc[1] + videoSeek.getHeight() + 24) {
+                        onSeekBar = true;
+                    }
+                }
+                swipeStartX = ev.getX();
+                swipeStartY = ev.getY();
+                swipeTracking = !onSeekBar;
+                swipeTriggered = false;
+            } else if (action == android.view.MotionEvent.ACTION_MOVE && swipeTracking && !swipeTriggered) {
+                float dx = ev.getX() - swipeStartX;
+                float dy = ev.getY() - swipeStartY;
+                float thresh = UiKit.dp(this, 70);
+                if (Math.abs(dx) > thresh && Math.abs(dx) > Math.abs(dy) * 1.6f) {
+                    swipeTriggered = true;
+                    android.view.MotionEvent cancelEv = android.view.MotionEvent.obtain(ev);
+                    cancelEv.setAction(android.view.MotionEvent.ACTION_CANCEL);
+                    super.dispatchTouchEvent(cancelEv);
+                    cancelEv.recycle();
+                    nudgePlayhead(dx < 0 ? -5000L : 5000L);
+                    return true;
+                }
+            } else if (action == android.view.MotionEvent.ACTION_UP || action == android.view.MotionEvent.ACTION_CANCEL) {
+                swipeTracking = false;
+                swipeTriggered = false;
+            }
+        } else {
+            swipeTracking = false;
+            swipeTriggered = false;
+        }
+        return super.dispatchTouchEvent(ev);
+    }
+
+    @Override
     public void onBackPressed() {
+        if (activeFeatureId == 2) {
+            clearLiveSfxSession();
+        } else {
+            StudioGudangAudioManager.stopPreview();
+        }
         if (activeFeatureId != FEATURE_HUB) {
             stopVideoPlayback();
             activeFeatureId = FEATURE_HUB;
@@ -288,9 +330,23 @@ public class VideoEditorStudioActivity extends Activity {
     }
 
     private void openFeature(int fid) {
+        if (activeFeatureId == 2 && fid != 2) {
+            clearLiveSfxSession();
+        } else {
+            StudioGudangAudioManager.stopPreview();
+        }
         stopVideoPlayback();
         activeFeatureId = fid;
         renderCurrentScreen();
+    }
+
+    private void clearLiveSfxSession() {
+        StudioGudangAudioManager.stopPreview();
+        DramaSoundPaletteHelper.stopAllLoopPlayers(liveSfxCues);
+        liveSfxCues.clear();
+        sfxUndoStack.clear();
+        sfxRedoStack.clear();
+        paletteController = null;
     }
 
     private void renderCurrentScreen() {
@@ -573,11 +629,7 @@ public class VideoEditorStudioActivity extends Activity {
         Button btnBack = UiKit.makeMenuButton(this,
                 "Kembali ke Daftar Semua Fitur Studio Video",
                 "Menutup halaman fitur ini dan kembali ke menu utama Studio Editor Video.",
-                UiKit.surfaceAlt(uiPrefs), uiPrefs, v -> {
-                    stopVideoPlayback();
-                    activeFeatureId = FEATURE_HUB;
-                    renderCurrentScreen();
-                });
+                UiKit.surfaceAlt(uiPrefs), uiPrefs, v -> onBackPressed());
         btnBack.setTextColor(UiKit.textPrimary(uiPrefs));
         box.addView(btnBack);
 
@@ -646,17 +698,24 @@ public class VideoEditorStudioActivity extends Activity {
         });
         card.addView(videoSeek);
 
-        // Hanya 3 Tombol Kontrol Simpel: Mundur | Putar / Jeda | Maju
-        int alt = UiKit.surfaceAlt(uiPrefs), txt = UiKit.textPrimary(uiPrefs);
+        // Pemutar Simpel Tanpa Tombol Mundur/Maju (Cukup Putar/Jeda + Geser Kiri Mundur / Geser Kanan Maju)
+        int txt = UiKit.textPrimary(uiPrefs);
         LinearLayout ctrl = new LinearLayout(this);
         ctrl.setOrientation(LinearLayout.HORIZONTAL);
-        ctrl.setPadding(0, UiKit.dp(this, 4), 0, UiKit.dp(this, 4));
-        ctrl.addView(OfficeUtils.makeRowButton(this, "Mundur", "Geser posisi putar video mundur", alt, txt, v -> nudgePlayhead(-4000L)));
-        btnPlayPause = OfficeUtils.makeRowButton(this, "Putar", "Putar atau jeda video (otomatis memutar potongan atau beserta efek film yang dipasang)",
+        ctrl.setPadding(0, UiKit.dp(this, 4), 0, UiKit.dp(this, 2));
+        btnPlayPause = OfficeUtils.makeRowButton(this, "Putar",
+                "Putar atau jeda video. Geser layar ke kiri untuk mundur 5 detik, geser layar ke kanan untuk maju 5 detik.",
                 UiKit.ACCENT_OFFICE, Color.WHITE, v -> togglePlayPause());
         ctrl.addView(btnPlayPause);
-        ctrl.addView(OfficeUtils.makeRowButton(this, "Maju", "Geser posisi putar video maju", alt, txt, v -> nudgePlayhead(4000L)));
         card.addView(ctrl);
+
+        TextView swipeHint = new TextView(this);
+        swipeHint.setText("Geser Kiri = Mundur 5 detik  •  Geser Kanan = Maju 5 detik");
+        swipeHint.setTextSize(12);
+        swipeHint.setTextColor(UiKit.textMuted(uiPrefs));
+        swipeHint.setGravity(Gravity.CENTER);
+        swipeHint.setPadding(0, 0, 0, UiKit.dp(this, 4));
+        card.addView(swipeHint);
 
         if (includeCutUndoRedo) {
             card.addView(UiKit.makeSectionLabel(this, "B. TANDAI TITIK POTONG SAMBIL PUTAR + UNDO / REDO", UiKit.ACCENT_WARM));
@@ -950,128 +1009,108 @@ public class VideoEditorStudioActivity extends Activity {
     // ==================== FITUR 2: STUDIO EFEK SUARA FILM & BACKSOUND VIDEO SAMBIL PUTAR ====================
 
     private void renderLiveFilmSfxStudioScreen() {
+        LinearLayout outer = new LinearLayout(this);
+        outer.setOrientation(LinearLayout.VERTICAL);
+        outer.setBackgroundColor(UiKit.bg(uiPrefs));
+
         ScrollView sv = new ScrollView(this);
         sv.setBackgroundColor(UiKit.bg(uiPrefs));
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         int p = UiKit.dp(this, 12);
-        root.setPadding(p, p, p, p);
+        root.setPadding(p, p, p, UiKit.dp(this, 16));
 
-        root.addView(buildSubHeaderAndBack("Studio Efek Suara Film & Backsound Video Sambil Putar"));
+        root.addView(buildSubHeaderAndBack("Studio Efek Film, Kartun & Backsound Video"));
         root.addView(MediaEditorCatalog.makeGuideCard(this, uiPrefs,
-                "Cara Edit Efek Suara Film Sambil Menonton Video (Kaca Pecah, Tabrakan + Live Play & Undo)",
-                "1. Pilih video atau film yang ingin Anda beri efek lalu tekan tombol Putar di atas.\n"
-                        + "2. Ketika adegan tabrakan, kaca pecah, pukulan, atau suasana tegang berlangsung di layar, langsung klik tombol efek di bawah ini!\n"
-                        + "3. Efek otomatis menempel tepat di detik tersebut. Saat Anda menekan Putar di atas, semua efek suara langsung ikut berbunyi bareng videonya! Salah tempel tinggal klik Undo.",
-                "Bisa menempel puluhan efek suara film sekaligus ditambah Backsound Musik 1-2 menit."));
+                "Panduan Singkat Efek & Backsound Video",
+                "1. Pilih video/film lalu tekan Putar (geser kiri = mundur 5 detik, geser kanan = maju 5 detik).\n"
+                        + "2. Ketuk 'Kategori' -> pilih Efek Singkat atau Backsound Musik.\n"
+                        + "3. Untuk Efek: tekan Putar untuk tes, lalu centang pas di detik target!\n"
+                        + "4. Untuk Backsound: centang lagu di detik target (otomatis jalan sampai akhir video), atau pakai Tandai Awal / Tandai Akhir di baris lagu itu.\n"
+                        + "5. Setelah beres, ketuk tombol 'Mulai Konversi Video' yang selalu terkunci di pojok kanan bawah layar.",
+                "Semua daftar di satu guliran halus; tombol konversi terkunci di kanan bawah layar."));
 
         root.addView(buildSimpleVideoPlayerAndCutCard(false));
 
-        LinearLayout undoCard = UiKit.makeCard(this, uiPrefs);
-        undoCard.addView(UiKit.makeSectionLabel(this, "B. KONTROL UNDO / REDO & TOMBOL TEMPEL EFEK FILM DETIK INI", UiKit.ACCENT_WARM));
+        final TextView tvFooterInfo = new TextView(this);
+        tvFooterInfo.setTextSize(13f);
+        tvFooterInfo.setTypeface(null, Typeface.BOLD);
+        tvFooterInfo.setTextColor(UiKit.textPrimary(uiPrefs));
+        tvFooterInfo.setText("Terpasang: " + liveSfxCues.size() + " item");
 
-        LinearLayout urRow = new LinearLayout(this);
-        urRow.setOrientation(LinearLayout.HORIZONTAL);
-        urRow.setPadding(0, 0, 0, UiKit.dp(this, 6));
-        urRow.addView(OfficeUtils.makeRowButton(this, "Undo Efek Terakhir (" + sfxUndoStack.size() + ")",
-                "Batalkan penambahan efek suara atau backsound terakhir",
-                UiKit.ACCENT_WARM, Color.WHITE, v -> performSfxUndo()));
-        urRow.addView(OfficeUtils.makeRowButton(this, "Redo Efek (" + sfxRedoStack.size() + ")",
-                "Kembalikan efek suara yang baru saja dibatalkan",
-                UiKit.ACCENT_AI, Color.WHITE, v -> performSfxRedo()));
-        urRow.addView(OfficeUtils.makeRowButton(this, "Reset Semua",
-                "Bersihkan seluruh efek yang ditempel",
-                UiKit.ACCENT_DANGER, Color.WHITE, v -> {
+        if (paletteController == null) {
+            paletteController = new DramaSoundPaletteHelper.Controller(
+                    this, uiPrefs, new DramaSoundPaletteHelper.Host() {
+                @Override public long getPlayheadMs() { return VideoEditorStudioActivity.this.getPlayheadMs(); }
+                @Override public long getTotalDurationMs() { return singleMeta.durationMs; }
+                @Override public void playTransitionFromMs(long cueAtMs) { playTransitionPreviewAt(cueAtMs); }
+                @Override public void stopPlaybackForPreviewSwitch() { if (isPlaying) togglePlayPause(); }
+                @Override public void triggerOneShotCue(DramaSoundPaletteHelper.CueItem cue) { triggerOneCuePreview(cue); }
+                @Override public void onPickAudioFromPhone() {
+                    UiKit.dialog(VideoEditorStudioActivity.this, uiPrefs)
+                            .setTitle("Pilih Audio dari Penyimpanan HP")
+                            .setItems(new String[]{"Buka File Manager Aplikasi", "Buka Galeri / Pemilih Sistem Android"}, (d, w) -> {
+                                if (w == 0) OfficeUtils.launchFilePicker(VideoEditorStudioActivity.this, REQ_PICK_LIVE_SFX_FM, "audio", "Pilih Efek / Backsound dari HP");
+                                else launchSysPicker("audio/*", REQ_PICK_LIVE_SFX_SYS);
+                            }).show();
+                }
+                @Override public void onPaletteAppliedCue(DramaSoundPaletteHelper.CueItem addedOrNull) {
+                    if (addedOrNull != null) {
+                        Toast.makeText(VideoEditorStudioActivity.this,
+                                "Terpasang: " + addedOrNull.title + " pada " + AudioDspEngine.formatMsShort(addedOrNull.atMs),
+                                Toast.LENGTH_SHORT).show();
+                    }
+                }
+                @Override public void onCuesChanged(int totalCount) {
+                    tvFooterInfo.setText("Terpasang: " + totalCount + " item");
+                }
+                @Override public void onUndoRequested() { performSfxUndo(); }
+                @Override public void onRedoRequested() { performSfxRedo(); }
+                @Override public void onResetAllRequested() {
                     if (!liveSfxCues.isEmpty()) {
                         pushSfxUndoSnapshot();
+                        DramaSoundPaletteHelper.stopAllLoopPlayers(liveSfxCues);
                         liveSfxCues.clear();
-                        renderCurrentScreen();
+                        refreshLiveSfxUiInPlace();
                     }
-                }));
-        undoCard.addView(urRow);
-
-        undoCard.addView(UiKit.makeMenuButton(this,
-                "Pilih Backsound Musik (Islami, Piano, Jazz, Rock, Jedag-Jedug, Tegang) atau Efek di Detik Ini",
-                "Membuka daftar kategori lengkap dari Studio Gudang Aplikasi maupun dari Memori HP untuk ditempel pada detik video saat ini.",
-                UiKit.ACCENT_AI, uiPrefs, v -> {
-                    final long triggerAt = getPlayheadMs();
-                    StudioGudangAudioManager.showUniversalAudioSourceChooser(
-                            this, uiPrefs, "Pasang Efek / Backsound di Detik " + AudioDspEngine.formatMsShort(triggerAt),
-                            true, true,
-                            (uri, title, durSec, isBacksound) -> addLiveSfxCueAt(uri, title, isBacksound ? 0L : triggerAt, isBacksound ? 0.30f : 1.0f, isBacksound),
-                            () -> OfficeUtils.launchFilePicker(this, REQ_PICK_LIVE_SFX_FM, "audio", "Pilih Efek / Backsound dari HP"),
-                            () -> launchSysPicker("audio/*", REQ_PICK_LIVE_SFX_SYS));
-                }));
-
-        undoCard.addView(UiKit.makeSectionLabel(this, "KLIK CEPAT EFEK FILM SAAT ADEGAN BERLANGSUNG:", UiKit.ACCENT_OFFICE));
-        String[][] quickSfx = {
-                {"sfx_glass_shatter", "Kaca Pecah"},
-                {"sfx_car_crash", "Tabrakan Mobil"},
-                {"sfx_tire_screech", "Rem & Tabrakan"},
-                {"sfx_big_explosion", "Ledakan Besar"},
-                {"sfx_heavy_punch", "Pukulan Tinju"},
-                {"sfx_martial_kick", "Tendangan Action"},
-                {"sfx_slap", "Tamparan Drama"},
-                {"sfx_sword_slash", "Tebasan Pedang"},
-                {"sfx_gunshot", "Tembakan Pistol"},
-                {"sfx_jumpscare", "Kejutan Horor"},
-                {"sfx_cinematic_boom", "Dentuman Boom"},
-                {"sfx_thunder", "Petir Menggelegar"},
-                {"sfx_creaky_door", "Pintu Horor"},
-                {"sfx_heartbeat", "Detak Jantung"},
-                {"sfx_whoosh", "Transisi Whoosh"},
-                {"sfx_applause", "Tepuk Tangan"},
-                {"sfx_censor_beep", "Sensor Beep"},
-                {"sfx_correct_ding", "Ding Benar"}
-        };
-        for (int i = 0; i < quickSfx.length; i += 2) {
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            for (int j = i; j < Math.min(quickSfx.length, i + 2); j++) {
-                final String sfxId = quickSfx[j][0];
-                final String sfxLabel = quickSfx[j][1];
-                row.addView(OfficeUtils.makeRowButton(this, "+ " + sfxLabel,
-                        "Tempel efek " + sfxLabel + " tepat di detik video sekarang",
-                        (j % 2 == 0) ? UiKit.ACCENT_KB : UiKit.ACCENT_KB_ALT, Color.WHITE, v -> {
-                            final long at = getPlayheadMs();
-                            final StudioGudangAudioManager.GudangItem gItem = StudioGudangAudioManager.findById(sfxId);
-                            if (gItem != null) {
-                                StudioGudangAudioManager.materializeItemAsync(this, gItem, file ->
-                                        addLiveSfxCueAt(Uri.fromFile(file), gItem.title, at, 1.0f, false));
-                            }
-                        }));
-            }
-            undoCard.addView(row);
+                }
+                @Override public int getUndoCount() { return sfxUndoStack.size(); }
+                @Override public int getRedoCount() { return sfxRedoStack.size(); }
+            }, liveSfxCues, sfxUndoStack, sfxRedoStack);
         }
-        root.addView(undoCard);
-
-        liveSfxListContainer = new LinearLayout(this);
-        liveSfxListContainer.setOrientation(LinearLayout.VERTICAL);
-        root.addView(liveSfxListContainer);
-        rebuildLiveSfxListUi();
-
-        LinearLayout saveCard = UiKit.makeCard(this, uiPrefs);
-        saveCard.addView(UiKit.makeMenuButton(this,
-                "Simpan & Gabungkan Semua Efek / Backsound ke Video MP4 Sekarang",
-                "Menyatukan seluruh efek suara film dan backsound musik ke dalam berkas video tanpa mengurangi kualitas gambar video.",
-                UiKit.ACCENT_OFFICE, uiPrefs, v -> executeRenderLiveFilmSfxOntoVideo()));
-        root.addView(saveCard);
+        paletteController.mountInto(root);
 
         sv.addView(root);
-        setContentView(sv);
+        outer.addView(sv, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        // Pinned Footer Bar di paling bawah layar — tombol Konversi dikunci di sebelah kanan bawah!
+        LinearLayout footerBar = new LinearLayout(this);
+        footerBar.setOrientation(LinearLayout.HORIZONTAL);
+        footerBar.setGravity(Gravity.CENTER_VERTICAL);
+        footerBar.setPadding(UiKit.dp(this, 12), UiKit.dp(this, 10), UiKit.dp(this, 12), UiKit.dp(this, 10));
+        footerBar.setBackgroundColor(UiKit.surfaceAlt(uiPrefs));
+
+        footerBar.addView(tvFooterInfo, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        Button btnConvertPinned = new Button(this);
+        btnConvertPinned.setAllCaps(false);
+        btnConvertPinned.setText("Mulai Konversi Video");
+        btnConvertPinned.setContentDescription("Mulai konversi dan gabungkan semua efek suara dan backsound ke video MP4 sekarang");
+        btnConvertPinned.setTextSize(13.5f);
+        btnConvertPinned.setTypeface(null, Typeface.BOLD);
+        btnConvertPinned.setTextColor(Color.WHITE);
+        btnConvertPinned.setBackground(UiKit.roundedBox(UiKit.ACCENT_OFFICE, Color.TRANSPARENT, UiKit.dp(this, 10), 0));
+        btnConvertPinned.setPadding(UiKit.dp(this, 16), UiKit.dp(this, 10), UiKit.dp(this, 16), UiKit.dp(this, 10));
+        btnConvertPinned.setOnClickListener(v -> executeRenderLiveFilmSfxOntoVideo());
+        footerBar.addView(btnConvertPinned, new LinearLayout.LayoutParams(-2, -2));
+
+        outer.addView(footerBar, new LinearLayout.LayoutParams(-1, -2));
+        setContentView(outer);
     }
 
-    private ArrayList<LiveSfxCue> cloneCueList(List<LiveSfxCue> src) {
-        ArrayList<LiveSfxCue> out = new ArrayList<>();
-        for (LiveSfxCue c : src) {
-            LiveSfxCue copy = new LiveSfxCue();
-            copy.uri = c.uri;
-            copy.title = c.title;
-            copy.atMs = c.atMs;
-            copy.volume = c.volume;
-            copy.isBacksoundLoop = c.isBacksoundLoop;
-            out.add(copy);
-        }
+    private ArrayList<DramaSoundPaletteHelper.CueItem> cloneCueList(List<DramaSoundPaletteHelper.CueItem> src) {
+        ArrayList<DramaSoundPaletteHelper.CueItem> out = new ArrayList<>();
+        for (DramaSoundPaletteHelper.CueItem c : src) out.add(c.copy());
         return out;
     }
 
@@ -1080,76 +1119,68 @@ public class VideoEditorStudioActivity extends Activity {
         sfxRedoStack.clear();
     }
 
-    private void addLiveSfxCueAt(Uri uri, String title, long atMs, float vol, boolean isBgm) {
-        pushSfxUndoSnapshot();
-        LiveSfxCue cue = new LiveSfxCue();
-        cue.uri = uri;
-        cue.title = title;
-        cue.atMs = Math.max(0L, atMs);
-        cue.volume = vol;
-        cue.isBacksoundLoop = isBgm;
-        liveSfxCues.add(cue);
-        triggerOneCuePreview(cue);
-        Toast.makeText(this, "Ditempel pada " + AudioDspEngine.formatMsShort(cue.atMs) + ": " + title, Toast.LENGTH_SHORT).show();
-        if (activeFeatureId == 2) renderCurrentScreen();
+    /**
+     * Logika Transisi Edit Enak:
+     * Jika efek/backsound ditempel di detik ke-15, otomatis mundur 2 detik ke detik ke-13 (atau detik 0 jika di awal)
+     * lalu langsung memutar video & efek melewati detik ke-15 dan terus lanjut hingga pengguna menekan Jeda.
+     */
+    private void playTransitionPreviewAt(long cueAtMs) {
+        if (singleVideoUri == null || videoView == null) return;
+        long preRollMs = Math.max(0L, cueAtMs - 2000L);
+        try {
+            stopAllCuePlayers();
+            for (DramaSoundPaletteHelper.CueItem c : liveSfxCues) {
+                if (c.atMs >= preRollMs) {
+                    c.lastTriggeredPlaybackMs = -5000L;
+                }
+            }
+            videoView.seekTo((int) preRollMs);
+            lastTickerPosMs = preRollMs - 50L;
+            if (!isPlaying) {
+                videoView.start();
+                isPlaying = true;
+                if (btnPlayPause != null) btnPlayPause.setText("Jeda");
+            }
+            DramaSoundPaletteHelper.syncCuesWithPlayhead(this, liveSfxCues, lastTickerPosMs, preRollMs, true);
+            mainHandler.removeCallbacks(ticker);
+            mainHandler.post(ticker);
+            updatePlayheadUi();
+        } catch (Throwable ignored) {}
+    }
+
+    private void refreshLiveSfxUiInPlace() {
+        if (paletteController != null) paletteController.refreshAllInPlace();
     }
 
     private void performSfxUndo() {
         if (sfxUndoStack.isEmpty()) {
-            Toast.makeText(this, "Tidak ada efek untuk di-Undo.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Tidak ada langkah untuk di-Undo.", Toast.LENGTH_SHORT).show();
             return;
         }
         sfxRedoStack.add(cloneCueList(liveSfxCues));
-        ArrayList<LiveSfxCue> prev = sfxUndoStack.remove(sfxUndoStack.size() - 1);
+        DramaSoundPaletteHelper.stopAllLoopPlayers(liveSfxCues);
+        ArrayList<DramaSoundPaletteHelper.CueItem> prev = sfxUndoStack.remove(sfxUndoStack.size() - 1);
         liveSfxCues.clear();
         liveSfxCues.addAll(prev);
-        Toast.makeText(this, "Undo efek berhasil. Tersisa " + liveSfxCues.size() + " efek.", Toast.LENGTH_SHORT).show();
-        renderCurrentScreen();
+        Toast.makeText(this, "Undo / Nggak Jadi berhasil. Tersisa " + liveSfxCues.size() + " item.", Toast.LENGTH_SHORT).show();
+        refreshLiveSfxUiInPlace();
     }
 
     private void performSfxRedo() {
         if (sfxRedoStack.isEmpty()) {
-            Toast.makeText(this, "Tidak ada efek untuk di-Redo.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Tidak ada langkah untuk di-Redo.", Toast.LENGTH_SHORT).show();
             return;
         }
         sfxUndoStack.add(cloneCueList(liveSfxCues));
-        ArrayList<LiveSfxCue> next = sfxRedoStack.remove(sfxRedoStack.size() - 1);
+        DramaSoundPaletteHelper.stopAllLoopPlayers(liveSfxCues);
+        ArrayList<DramaSoundPaletteHelper.CueItem> next = sfxRedoStack.remove(sfxRedoStack.size() - 1);
         liveSfxCues.clear();
         liveSfxCues.addAll(next);
-        Toast.makeText(this, "Redo efek berhasil. Total " + liveSfxCues.size() + " efek.", Toast.LENGTH_SHORT).show();
-        renderCurrentScreen();
+        Toast.makeText(this, "Redo berhasil. Total " + liveSfxCues.size() + " item.", Toast.LENGTH_SHORT).show();
+        refreshLiveSfxUiInPlace();
     }
 
-    private void rebuildLiveSfxListUi() {
-        if (liveSfxListContainer == null) return;
-        liveSfxListContainer.removeAllViews();
-        LinearLayout card = UiKit.makeCard(this, uiPrefs);
-        card.addView(UiKit.makeSectionLabel(this, "C. DAFTAR EFEK FILM & BACKSOUND TERPASANG (" + liveSfxCues.size() + " ITEM)", UiKit.ACCENT_KB));
-        if (liveSfxCues.isEmpty()) {
-            TextView tv = new TextView(this);
-            tv.setText("Belum ada efek ditempel. Putar video di atas lalu klik tombol efek saat adegan berlangsung.");
-            tv.setTextColor(UiKit.textMuted(uiPrefs));
-            card.addView(tv);
-            liveSfxListContainer.addView(card);
-            return;
-        }
-        for (int i = 0; i < liveSfxCues.size(); i++) {
-            final int idx = i;
-            final LiveSfxCue c = liveSfxCues.get(i);
-            String tag = c.isBacksoundLoop ? "[Backsound Musik Latar]" : ("Detik " + AudioDspEngine.formatMs(c.atMs));
-            card.addView(UiKit.makeMenuButton(this,
-                    (i + 1) + ". " + tag + " — " + c.title + " (Vol " + Math.round(c.volume * 100) + "%)",
-                    "Ketuk untuk menghapus efek ini atau gunakan tombol Undo di atas.",
-                    UiKit.surfaceAlt(uiPrefs), uiPrefs, v -> {
-                        pushSfxUndoSnapshot();
-                        liveSfxCues.remove(idx);
-                        renderCurrentScreen();
-                    }));
-        }
-        liveSfxListContainer.addView(card);
-    }
-
-    private void triggerOneCuePreview(LiveSfxCue cue) {
+    private void triggerOneCuePreview(DramaSoundPaletteHelper.CueItem cue) {
         try {
             final MediaPlayer mp = new MediaPlayer();
             mp.setDataSource(this, cue.uri);
@@ -1165,6 +1196,7 @@ public class VideoEditorStudioActivity extends Activity {
     }
 
     private void stopAllCuePlayers() {
+        DramaSoundPaletteHelper.stopAllLoopPlayers(liveSfxCues);
         for (MediaPlayer mp : new ArrayList<>(activeCuePlayers)) {
             try { if (mp.isPlaying()) mp.stop(); } catch (Throwable ignored) {}
             try { mp.release(); } catch (Throwable ignored) {}
@@ -1176,12 +1208,13 @@ public class VideoEditorStudioActivity extends Activity {
         if (singleVideoUri == null) { Toast.makeText(this, "Pilih berkas video terlebih dahulu.", Toast.LENGTH_SHORT).show(); return; }
         if (liveSfxCues.isEmpty()) { Toast.makeText(this, "Tempel minimal 1 efek suara atau backsound terlebih dahulu.", Toast.LENGTH_SHORT).show(); return; }
         final List<AudioDspEngine.MixTrackSpec> specs = new ArrayList<>();
-        for (LiveSfxCue c : liveSfxCues) {
+        for (DramaSoundPaletteHelper.CueItem c : liveSfxCues) {
             AudioDspEngine.MixTrackSpec tr = new AudioDspEngine.MixTrackSpec();
             tr.uri = c.uri;
             tr.title = c.title;
             tr.volume = c.volume;
             tr.delayMs = c.atMs;
+            tr.endMs = c.endMs;
             tr.loop = c.isBacksoundLoop;
             specs.add(tr);
         }
@@ -2597,14 +2630,14 @@ public class VideoEditorStudioActivity extends Activity {
                     videoView.seekTo((int) startBound);
                     cur = startBound;
                 }
-                lastTickerPosMs = cur;
-                for (LiveSfxCue cue : liveSfxCues) {
+                lastTickerPosMs = cur - 50L;
+                for (DramaSoundPaletteHelper.CueItem cue : liveSfxCues) {
                     cue.lastTriggeredPlaybackMs = -5000L;
-                    if (cue.isBacksoundLoop) triggerOneCuePreview(cue);
                 }
                 videoView.start();
                 isPlaying = true;
                 if (btnPlayPause != null) btnPlayPause.setText("Jeda");
+                DramaSoundPaletteHelper.syncCuesWithPlayhead(this, liveSfxCues, lastTickerPosMs, cur, true);
                 mainHandler.removeCallbacks(ticker);
                 mainHandler.post(ticker);
             } catch (Throwable ignored) {}
@@ -2635,8 +2668,14 @@ public class VideoEditorStudioActivity extends Activity {
     private void nudgePlayhead(long delta) {
         if (singleVideoUri == null) return;
         long t = Math.max(0L, Math.min(singleMeta.durationMs, getPlayheadMs() + delta));
+        for (DramaSoundPaletteHelper.CueItem cue : liveSfxCues) {
+            if (cue.atMs >= t) cue.lastTriggeredPlaybackMs = -5000L;
+        }
         seekAbsolute(t);
-        OfficeUtils.announce(tvPlayPos, "Posisi " + AudioDspEngine.formatMsShort(t));
+        if (isPlaying) {
+            DramaSoundPaletteHelper.syncCuesWithPlayhead(this, liveSfxCues, t - 50L, t, true);
+        }
+        OfficeUtils.announce(tvPlayPos, (delta < 0 ? "Mundur ke " : "Maju ke ") + AudioDspEngine.formatMsShort(t));
     }
 
     private void updatePlayheadUi() {
@@ -2656,7 +2695,8 @@ public class VideoEditorStudioActivity extends Activity {
         }
 
         if (isPlaying && activeFeatureId == 2 && !liveSfxCues.isEmpty()) {
-            for (LiveSfxCue cue : liveSfxCues) {
+            DramaSoundPaletteHelper.syncCuesWithPlayhead(this, liveSfxCues, lastTickerPosMs, pos, true);
+            for (DramaSoundPaletteHelper.CueItem cue : liveSfxCues) {
                 if (cue.isBacksoundLoop) continue;
                 if (pos >= cue.atMs && lastTickerPosMs < cue.atMs && Math.abs(pos - cue.lastTriggeredPlaybackMs) > 400L) {
                     cue.lastTriggeredPlaybackMs = pos;
@@ -2830,8 +2870,17 @@ public class VideoEditorStudioActivity extends Activity {
             renderCurrentScreen();
             Toast.makeText(this, "Video kedua dipilih: " + splitVid2Meta.displayName, Toast.LENGTH_SHORT).show();
         } else if (requestCode == REQ_PICK_LIVE_SFX_FM || requestCode == REQ_PICK_LIVE_SFX_SYS) {
-            String name = AudioDspEngine.resolveDisplayName(this, uri);
-            addLiveSfxCueAt(uri, name, getPlayheadMs(), 1.0f, false);
+            final String name = AudioDspEngine.resolveDisplayName(this, uri);
+            UiKit.dialog(this, uiPrefs)
+                    .setTitle("Pasang \"" + name + "\" Sebagai Apa?")
+                    .setItems(new String[]{
+                            "1. Efek Suara (Tempel di Detik Video Saat Ini)",
+                            "2. Backsound Musik (Ikuti Pilihan Mode Full / Detik Ini / Potong)"
+                    }, (d, w) -> {
+                        if (paletteController != null) {
+                            paletteController.addPhoneCue(uri, name, w == 1);
+                        }
+                    }).show();
         }
     }
 

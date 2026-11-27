@@ -65,8 +65,8 @@ public final class VideoEditEngine {
         public String bgMode = "BLUR";      // BLUR | BLUR_STRONG | BLACK | WHITE | DARK_GRAY | NAVY
         public int targetLongSide = 0;      // 0=auto/asli, 640(360p), 854(480p), 1280(720p), 1920(1080p)
         public int fps = 30;
-        public int crf = 23;                // 18 (tinggi), 23 (standar), 28 (kompres hemat)
-        public int audioBitrateKbps = 192;  // 96, 128, 160, 192, 256, 320 kbps
+        public int crf = 26;                // 18 (tinggi), 23 (tajam), 26 (seimbang hemat), 28 (kompres hemat)
+        public int audioBitrateKbps = 128;  // 96, 128, 160, 192, 256, 320 kbps
         public int cropLeftPct = 0, cropRightPct = 0, cropTopPct = 0, cropBottomPct = 0;
         public int extraRotateDeg = 0;      // 0, 90, 180, 270
         public boolean flipH = false;
@@ -182,7 +182,7 @@ public final class VideoEditEngine {
                                 + "[v0][a0][v1][a1]concat=n=2:v=1:a=1[outv][outa]",
                         AudioDspEngine.formatSecForFfmpeg(cutStartMs), AudioDspEngine.formatSecForFfmpeg(cutStartMs),
                         AudioDspEngine.formatSecForFfmpeg(cutEndMs), AudioDspEngine.formatSecForFfmpeg(cutEndMs));
-                mapArgs = "-map \"[outv]\" -map \"[outa]\" -c:a aac -b:a 160k ";
+                mapArgs = "-map \"[outv]\" -map \"[outa]\" -c:a aac -profile:a aac_low -b:a 112k ";
             } else {
                 fc = String.format(Locale.US,
                         "[0:v]trim=0:%s,setpts=PTS-STARTPTS[v0];[0:v]trim=%s,setpts=PTS-STARTPTS[v1];[v0][v1]concat=n=2:v=1:a=0[outv]",
@@ -190,7 +190,7 @@ public final class VideoEditEngine {
                 mapArgs = "-map \"[outv]\" -an ";
             }
             String cmd = "-y -i " + AudioDspEngine.q(inFile) + " -filter_complex \"" + fc + "\" "
-                    + mapArgs + "-c:v libx264 -preset veryfast -crf 22 -pix_fmt yuv420p -movflags +faststart "
+                    + mapArgs + "-c:v libx264 -preset fast -crf 25 -pix_fmt yuv420p -movflags +faststart "
                     + AudioDspEngine.q(outMp4);
             AudioDspEngine.runFfmpegOrThrow(cmd);
         } finally {
@@ -279,7 +279,7 @@ public final class VideoEditEngine {
             }
             fc.append(tags).append("concat=n=").append(files.size()).append(":v=1:a=1[outv][outa]");
             String cmd = "-y " + inputs + "-filter_complex \"" + fc + "\" -map \"[outv]\" -map \"[outa]\" "
-                    + "-c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 160k -movflags +faststart "
+                    + "-c:v libx264 -preset fast -crf 25 -c:a aac -profile:a aac_low -b:a 112k -movflags +faststart "
                     + AudioDspEngine.q(outMp4);
             AudioDspEngine.runFfmpegOrThrow(cmd);
         } finally {
@@ -321,33 +321,43 @@ public final class VideoEditEngine {
                     if (tr.loop) inputs.append("-stream_loop -1 ");
                     inputs.append("-i ").append(AudioDspEngine.q(af)).append(" ");
                     int inputIdx = extraStartIdx + i;
+                    String trimStr = "";
+                    if (tr.endMs > tr.delayMs) {
+                        long durLimit = tr.endMs - tr.delayMs;
+                        if (vm.durationMs > 0) durLimit = Math.min(durLimit, Math.max(200L, vm.durationMs - tr.delayMs));
+                        trimStr = ",atrim=0:" + AudioDspEngine.formatSecForFfmpeg(durLimit) + ",asetpts=PTS-STARTPTS";
+                    } else if (tr.loop && vm.durationMs > 0) {
+                        long durLimit = Math.max(200L, vm.durationMs - tr.delayMs);
+                        trimStr = ",atrim=0:" + AudioDspEngine.formatSecForFfmpeg(durLimit) + ",asetpts=PTS-STARTPTS";
+                    }
                     String delay = tr.delayMs > 0 ? (",adelay=" + tr.delayMs + "|" + tr.delayMs) : "";
                     fc.append(String.format(Locale.US,
-                            "[%d:a]aresample=44100:async=1,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=%.2f%s[t%d];",
-                            inputIdx, tr.volume, delay, streamCount));
+                            "[%d:a]aresample=44100:async=1,aformat=sample_fmts=fltp:channel_layouts=stereo%s,volume=%.2f%s[t%d];",
+                            inputIdx, trimStr, tr.volume, delay, streamCount));
                     streamCount++;
                 }
             }
 
             if (streamCount == 1) {
-                fc.append("[t0]acopy[outa]");
+                fc.append("[t0]alimiter=limit=0.95[outa]");
             } else if (autoDucking && hasOrig) {
                 StringBuilder bgTags = new StringBuilder();
                 for (int k = 1; k < streamCount; k++) bgTags.append("[t").append(k).append("]");
                 if (streamCount == 2) {
-                    fc.append("[t0]asplit=2[vmain][vsc];[t1][vsc]sidechaincompress=threshold=0.03:ratio=5:attack=40:release=350[bgd];[vmain][bgd]amix=inputs=2:duration=first:normalize=0[outa]");
+                    fc.append("[t0]asplit=2[vmain][vsc];[t1][vsc]sidechaincompress=threshold=0.03:ratio=5:attack=40:release=350[bgd];[vmain][bgd]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[outa]");
                 } else {
                     fc.append(bgTags).append("amix=inputs=").append(streamCount - 1).append(":duration=first:normalize=0[bgall];");
-                    fc.append("[t0]asplit=2[vmain][vsc];[bgall][vsc]sidechaincompress=threshold=0.03:ratio=5:attack=40:release=350[bgd];[vmain][bgd]amix=inputs=2:duration=first:normalize=0[outa]");
+                    fc.append("[t0]asplit=2[vmain][vsc];[bgall][vsc]sidechaincompress=threshold=0.03:ratio=5:attack=40:release=350[bgd];[vmain][bgd]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[outa]");
                 }
             } else {
                 StringBuilder allTags = new StringBuilder();
                 for (int k = 0; k < streamCount; k++) allTags.append("[t").append(k).append("]");
-                fc.append(allTags).append("amix=inputs=").append(streamCount).append(":duration=first:normalize=0[outa]");
+                fc.append(allTags).append("amix=inputs=").append(streamCount).append(":duration=first:normalize=0,alimiter=limit=0.95[outa]");
             }
 
+            String limitArg = vm.durationMs > 0 ? ("-t " + AudioDspEngine.formatSecForFfmpeg(vm.durationMs) + " ") : "";
             String cmd = "-y " + inputs + "-filter_complex \"" + fc + "\" "
-                    + "-map 0:v -map \"[outa]\" -c:v copy -c:a aac -b:a 160k -shortest -movflags +faststart "
+                    + "-map 0:v -map \"[outa]\" -c:v copy -c:a aac -profile:a aac_low -b:a 112k " + limitArg + "-shortest -movflags +faststart "
                     + AudioDspEngine.q(outMp4);
             AudioDspEngine.runFfmpegOrThrow(cmd);
         } finally {
@@ -483,13 +493,13 @@ public final class VideoEditEngine {
                 if (opts.reverse) aParts.add("areverse");
                 if (Math.abs(spd - 1.0f) >= 0.03f) aParts.add(AudioDspEngine.buildSpeedPitchFilter(spd, 0f, false));
                 fc.append(";[0:a]").append(String.join(",", aParts)).append("[outa]");
-                mapAudio = "-map \"[outa]\" -c:a aac -b:a " + aBr + "k ";
+                mapAudio = "-map \"[outa]\" -c:a aac -profile:a aac_low -b:a " + aBr + "k ";
             } else {
                 mapAudio = "-an ";
             }
 
             String cmd = "-y " + inputs + "-filter_complex \"" + fc + "\" -map \"[outv]\" " + mapAudio
-                    + "-c:v libx264 -preset veryfast -crf " + opts.crf + " -movflags +faststart "
+                    + "-c:v libx264 -preset fast -crf " + opts.crf + " -movflags +faststart "
                     + AudioDspEngine.q(outMp4);
             AudioDspEngine.runFfmpegOrThrow(cmd);
         } finally {
@@ -541,7 +551,7 @@ public final class VideoEditEngine {
         try {
             int br = Math.max(64, Math.min(320, audioBitrateKbps));
             String cmd = "-y -i " + AudioDspEngine.q(inFile)
-                    + " -filter:a \"" + audioFilterChain + "\" -c:v copy -c:a aac -b:a " + br + "k -movflags +faststart "
+                    + " -filter:a \"" + audioFilterChain + "\" -c:v copy -c:a aac -profile:a aac_low -b:a " + br + "k -movflags +faststart "
                     + AudioDspEngine.q(outMp4);
             AudioDspEngine.runFfmpegOrThrow(cmd);
         } finally {
@@ -588,9 +598,9 @@ public final class VideoEditEngine {
                 Uri u = imageUris.get(i);
                 File img = AudioDspEngine.materializeRawCopyIfContent(ctx, u, workDir, "ss_img_" + i);
                 if (!"file".equals(u.getScheme())) tmpFiles.add(img);
-                inputs.append(String.format(Locale.US, "-loop 1 -t %.2f -i %s ", secPerPhoto, AudioDspEngine.q(img)));
+                inputs.append(String.format(Locale.US, "-loop 1 -r 10 -t %.2f -i %s ", secPerPhoto, AudioDspEngine.q(img)));
                 fc.append(String.format(Locale.US,
-                        "[%d:v]scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=25,format=yuv420p[v%d];",
+                        "[%d:v]scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=10,format=yuv420p[v%d];",
                         i, outW, outH, outW, outH, i));
                 vtags.append("[v").append(i).append("]");
             }
@@ -602,11 +612,11 @@ public final class VideoEditEngine {
                 if (!"file".equals(bgMusicUri.getScheme())) tmpFiles.add(bg);
                 inputs.append("-stream_loop -1 -i ").append(AudioDspEngine.q(bg)).append(" ");
                 int bgIdx = imageUris.size();
-                audioMap = "-map " + bgIdx + ":a -c:a aac -b:a 160k -shortest ";
+                audioMap = "-map " + bgIdx + ":a -c:a aac -profile:a aac_low -b:a 112k -shortest ";
             }
 
             String cmd = "-y " + inputs + "-filter_complex \"" + fc + "\" -map \"[outv]\" " + audioMap
-                    + "-c:v libx264 -preset veryfast -crf 22 -pix_fmt yuv420p -movflags +faststart "
+                    + "-c:v libx264 -preset fast -tune stillimage -crf 26 -pix_fmt yuv420p -movflags +faststart "
                     + AudioDspEngine.q(outMp4);
             AudioDspEngine.runFfmpegOrThrow(cmd);
         } finally {
@@ -788,7 +798,7 @@ public final class VideoEditEngine {
                         w, h, w, h, w, h, w, h);
                 String cmd = "-y -loop 1 -t 1.2 -i " + AudioDspEngine.q(inCov) + " -i " + AudioDspEngine.q(inVid)
                         + " -filter_complex \"" + fc + "\" -map \"[outv]\" -map \"[outa]\" "
-                        + "-c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 192k -movflags +faststart "
+                        + "-c:v libx264 -preset fast -crf 25 -c:a aac -profile:a aac_low -b:a 112k -movflags +faststart "
                         + AudioDspEngine.q(outMp4);
                 AudioDspEngine.runFfmpegOrThrow(cmd);
             }
@@ -815,7 +825,7 @@ public final class VideoEditEngine {
             } else {
                 String cmd = "-y -t 6 -i " + AudioDspEngine.q(inVid)
                         + " -filter_complex \"[0:v]split[v1][v2];[v2]reverse[vr];[v1][vr]concat=n=2:v=1:a=0,format=yuv420p[outv]\" "
-                        + "-map \"[outv]\" -an -c:v libx264 -preset veryfast -crf 23 -movflags +faststart "
+                        + "-map \"[outv]\" -an -c:v libx264 -preset fast -crf 25 -movflags +faststart "
                         + AudioDspEngine.q(outMp4);
                 AudioDspEngine.runFfmpegOrThrow(cmd);
             }
@@ -833,12 +843,12 @@ public final class VideoEditEngine {
         File inVid = AudioDspEngine.materializeRawCopyIfContent(ctx, videoUri, workDir, "vqvf_v");
         boolean cleanVid = !"file".equals(videoUri.getScheme());
         try {
-            int abr = Math.max(96, Math.min(320, audioBitrateKbps));
-            String afArg = (afChain == null || afChain.trim().isEmpty()) ? "-c:a aac -b:a " + abr + "k "
-                    : ("-af \"" + afChain + "\" -c:a aac -b:a " + abr + "k ");
+            int abr = Math.max(64, Math.min(320, audioBitrateKbps));
+            String afArg = (afChain == null || afChain.trim().isEmpty()) ? "-c:a aac -profile:a aac_low -b:a " + abr + "k "
+                    : ("-af \"" + afChain + "\" -c:a aac -profile:a aac_low -b:a " + abr + "k ");
             String cmd = "-y -i " + AudioDspEngine.q(inVid)
                     + " -vf \"" + vfChain + ",format=yuv420p\" "
-                    + "-c:v libx264 -preset veryfast -crf 23 " + afArg + "-movflags +faststart "
+                    + "-c:v libx264 -preset fast -crf 25 " + afArg + "-movflags +faststart "
                     + AudioDspEngine.q(outMp4);
             AudioDspEngine.runFfmpegOrThrow(cmd);
         } finally {
@@ -869,7 +879,7 @@ public final class VideoEditEngine {
             }
             String cmd = "-y -i " + AudioDspEngine.q(f1) + " -i " + AudioDspEngine.q(f2)
                     + " -filter_complex \"" + fc + "\" -map \"[outv]\" -map 0:a? "
-                    + "-c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 160k -shortest -movflags +faststart "
+                    + "-c:v libx264 -preset fast -crf 25 -c:a aac -profile:a aac_low -b:a 112k -shortest -movflags +faststart "
                     + AudioDspEngine.q(outMp4);
             AudioDspEngine.runFfmpegOrThrow(cmd);
         } finally {

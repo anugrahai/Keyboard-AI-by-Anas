@@ -65,6 +65,14 @@ public class GeminiTtsActivity extends Activity {
     private static final int VOICE_MODE_BUILTIN = 0;
     private static final int VOICE_MODE_UPDATED = 1;
 
+    private static final String[] AUDIO_FORMAT_EXTS = {"m4a", "opus", "mp3", "wav"};
+    private static final String[] AUDIO_FORMAT_LABELS = {
+            "M4A / AAC Studio (64–96 kbps • < 1 MB/menit, Jernih Seperti Ori)",
+            "OPUS Super Hemat (48–64 kbps • Ukuran Terkecil & Tajam)",
+            "MP3 Universal (96–128 kbps • Kompatibel Semua HP/Player)",
+            "WAV PCM Mentah (Tanpa Kompresi • ~3–10 MB/menit)"
+    };
+
     private static final String[] DEFAULT_TTS_MODELS = {
             "gemini-3.8-flash-tts",
             "gemini-3.8-flash-lite-tts",
@@ -207,14 +215,17 @@ public class GeminiTtsActivity extends Activity {
     private Button tabBtn0, tabBtn1, tabBtn2;
     private TextView metaLabel, statusLabel, keyBadge, modelInfoLabel, voiceInfoLabel, activeStyleBadge;
     private android.widget.ProgressBar topProgressBar;
-    private Button btnModel, btnLanguage, btnVoiceSourceMode, btnVoice1, btnVoice2;
+    private Button btnModel, btnLanguage, btnVoiceSourceMode, btnVoice1, btnVoice2, btnOutputFormat;
     private Button btnGenerate, btnPlay, btnSave, btnShare, btnMixBacksoundWav, btnExportFullVideo, btnWaStatusVideo, btnUpdateModels, btnUpdateVoices;
+    private String selectedAudioFmt = "m4a";
     private boolean pickMusicForWavMix = false;
     private EditText etStylePrompt, etInputText;
     private CheckBox cbMultiSpeaker, cbUseAppLogic, cbDynamicExpr;
 
     private File generatedWavFile;
     private MediaPlayer mediaPlayer;
+    private float swipeStartX = 0f, swipeStartY = 0f;
+    private boolean swipeTracking = false, swipeTriggered = false;
 
     // Status WA Video + Musik Latar + Antrean Upload Berurutan
     private Uri bgMusicUri;
@@ -226,6 +237,55 @@ public class GeminiTtsActivity extends Activity {
     private final List<File> pendingWaVideos = new ArrayList<>();
     private int pendingWaIndex = 0;
     private boolean waSendInFlight = false;
+
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        if (mediaPlayer != null && activeTab == 0 && ev.getPointerCount() == 1) {
+            int action = ev.getActionMasked();
+            if (action == android.view.MotionEvent.ACTION_DOWN) {
+                swipeStartX = ev.getX();
+                swipeStartY = ev.getY();
+                swipeTracking = true;
+                swipeTriggered = false;
+            } else if (action == android.view.MotionEvent.ACTION_MOVE && swipeTracking && !swipeTriggered) {
+                float dx = ev.getX() - swipeStartX;
+                float dy = ev.getY() - swipeStartY;
+                float thresh = UiKit.dp(this, 75);
+                if (Math.abs(dx) > thresh && Math.abs(dx) > Math.abs(dy) * 1.6f) {
+                    swipeTriggered = true;
+                    android.view.MotionEvent cancelEv = android.view.MotionEvent.obtain(ev);
+                    cancelEv.setAction(android.view.MotionEvent.ACTION_CANCEL);
+                    super.dispatchTouchEvent(cancelEv);
+                    cancelEv.recycle();
+                    try {
+                        int dur = Math.max(0, mediaPlayer.getDuration());
+                        int cur = Math.max(0, mediaPlayer.getCurrentPosition());
+                        int next = Math.max(0, Math.min(dur, cur + (dx < 0 ? -5000 : 5000)));
+                        mediaPlayer.seekTo(next);
+                        OfficeUtils.announce(statusLabel, (dx < 0 ? "Mundur ke " : "Maju ke ") + (next / 1000) + " detik");
+                    } catch (Throwable ignored) {}
+                    return true;
+                }
+            } else if (action == android.view.MotionEvent.ACTION_UP || action == android.view.MotionEvent.ACTION_CANCEL) {
+                swipeTracking = false;
+                swipeTriggered = false;
+            }
+        } else {
+            swipeTracking = false;
+            swipeTriggered = false;
+        }
+        return super.dispatchTouchEvent(ev);
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (activeTab != 0) {
+            switchTab(0);
+            return;
+        }
+        releaseMediaPlayer();
+        super.onBackPressed();
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -259,6 +319,7 @@ public class GeminiTtsActivity extends Activity {
         chunkCharLimit = prefs.getInt("gtts_chunk_chars", 1500);
         maxChunksGuard = prefs.getInt("gtts_max_chunks", 8);
         chunkDelayMs = prefs.getInt("gtts_delay_ms", 1500);
+        selectedAudioFmt = normalizeAudioFmt(prefs.getString("gtts_audio_fmt", "m4a"));
         selectedPresetIdx = Math.max(0, Math.min(STYLE_PRESETS.length - 1, prefs.getInt("gtts_preset_idx", 0)));
         try {
             JSONArray mArr = new JSONArray(prefs.getString("gtts_mixins_json", "[]"));
@@ -297,6 +358,7 @@ public class GeminiTtsActivity extends Activity {
                 .putInt("gtts_chunk_chars", chunkCharLimit)
                 .putInt("gtts_max_chunks", maxChunksGuard)
                 .putInt("gtts_delay_ms", chunkDelayMs)
+                .putString("gtts_audio_fmt", selectedAudioFmt)
                 .putInt("gtts_preset_idx", selectedPresetIdx)
                 .putString("gtts_mixins_json", buildCheckedMixinsJson())
                 .apply();
@@ -436,8 +498,15 @@ public class GeminiTtsActivity extends Activity {
         tabPanel0.addView(inputCard);
 
         LinearLayout actionCard = UiKit.makeCard(this, prefs);
+        btnOutputFormat = new Button(this);
+        btnOutputFormat.setText("Format Output Audio: " + selectedAudioFmt.toUpperCase(Locale.ROOT) + " (Hemat & Jernih)");
+        btnOutputFormat.setContentDescription("Pilih format output audio Gemini TTS: M4A AAC hemat jernih, OPUS super ringan, MP3 universal, atau WAV mentah");
+        UiKit.styleButton(this, btnOutputFormat, UiKit.ACCENT_SYSTEM);
+        btnOutputFormat.setOnClickListener(v -> showOutputFormatDialog());
+        actionCard.addView(btnOutputFormat);
+
         btnGenerate = new Button(this);
-        btnGenerate.setText("Konversi ke Audio WAV");
+        btnGenerate.setText("Konversi ke Audio (" + selectedAudioFmt.toUpperCase(Locale.ROOT) + ")");
         UiKit.styleButton(this, btnGenerate, UiKit.ACCENT_AI);
         btnGenerate.setOnClickListener(v -> {
             if (generating) {
@@ -451,9 +520,9 @@ public class GeminiTtsActivity extends Activity {
 
         LinearLayout audioRow = new LinearLayout(this);
         audioRow.setOrientation(LinearLayout.HORIZONTAL);
-        btnPlay = OfficeUtils.makeRowButton(this, "Putar", "Putar atau jeda audio WAV", UiKit.ACCENT_OFFICE, Color.WHITE, v -> togglePlay());
-        btnSave = OfficeUtils.makeRowButton(this, "Simpan WAV", "Simpan berkas WAV ke penyimpanan", UiKit.ACCENT_KB, Color.WHITE, v -> saveWavAs());
-        btnShare = OfficeUtils.makeRowButton(this, "Bagikan", "Bagikan berkas WAV ke aplikasi lain", UiKit.ACCENT_WARM, Color.WHITE, v -> shareWav());
+        btnPlay = OfficeUtils.makeRowButton(this, "Putar", "Putar atau jeda audio hasil TTS", UiKit.ACCENT_OFFICE, Color.WHITE, v -> togglePlay());
+        btnSave = OfficeUtils.makeRowButton(this, "Simpan", "Simpan berkas audio ke penyimpanan", UiKit.ACCENT_KB, Color.WHITE, v -> saveWavAs());
+        btnShare = OfficeUtils.makeRowButton(this, "Bagikan", "Bagikan berkas audio ke aplikasi lain", UiKit.ACCENT_WARM, Color.WHITE, v -> shareWav());
         btnPlay.setEnabled(false);
         btnSave.setEnabled(false);
         btnShare.setEnabled(false);
@@ -463,7 +532,7 @@ public class GeminiTtsActivity extends Activity {
         actionCard.addView(audioRow);
 
         btnMixBacksoundWav = new Button(this);
-        btnMixBacksoundWav.setText("Tambah Backsound Musik ke Audio WAV (Aplikasi / HP)");
+        btnMixBacksoundWav.setText("Tambah Backsound Musik ke Audio (Aplikasi / HP)");
         btnMixBacksoundWav.setContentDescription("Campur backsound musik dari kategori aplikasi atau memori HP ke audio suara Gemini TTS");
         UiKit.styleButton(this, btnMixBacksoundWav, UiKit.ACCENT_KB_ALT);
         btnMixBacksoundWav.setEnabled(false);
@@ -1585,16 +1654,34 @@ public class GeminiTtsActivity extends Activity {
                 byte[] totalPcm = pcmAll.toByteArray();
                 if (totalPcm.length == 0) throw new IllegalStateException("Server mengembalikan audio kosong.");
 
-                OfficeUtils.clearDirectoryContents(new File(getCacheDir(), "gemini_tts"));
+                File cacheTtsDir = new File(getCacheDir(), "gemini_tts");
+                OfficeUtils.clearDirectoryContents(cacheTtsDir);
+                if (!cacheTtsDir.exists()) cacheTtsDir.mkdirs();
+
                 File dir = OfficeUtils.resolveBackupSubfolder(this, "Gemini TTS/Gemini Audio");
-                File outWav = new File(dir, "GeminiTTS_" + System.currentTimeMillis() + ".wav");
-                writeWavFile(outWav, totalPcm, SAMPLE_RATE, 1, 16);
-                generatedWavFile = outWav;
+                String fmt = normalizeAudioFmt(selectedAudioFmt);
+                long ts = System.currentTimeMillis();
+                File outAudio = new File(dir, "GeminiTTS_" + ts + "." + fmt);
+                if ("wav".equals(fmt)) {
+                    writeWavFile(outAudio, totalPcm, SAMPLE_RATE, 1, 16);
+                } else {
+                    mainHandler.post(() -> updateProgressStatus(97, "Mengompres audio ke " + fmt.toUpperCase(Locale.ROOT) + " hemat jernih...", true));
+                    File tmpRawWav = new File(cacheTtsDir, "raw_" + ts + ".wav");
+                    try {
+                        writeWavFile(tmpRawWav, totalPcm, SAMPLE_RATE, 1, 16);
+                        int br = bitrateForVoice(fmt);
+                        int sr = "opus".equals(fmt) ? 48000 : SAMPLE_RATE;
+                        AudioDspEngine.encodeAudioClean(tmpRawWav, outAudio, fmt, br, sr, 1, true);
+                    } finally {
+                        try { tmpRawWav.delete(); } catch (Throwable ignored) {}
+                    }
+                }
+                generatedWavFile = outAudio;
 
                 double sec = totalPcm.length / (double) (SAMPLE_RATE * 2);
                 final String msg = String.format(Locale.US,
                         "Progres: 100%% (Selesai) • %d dari %d bagian -> %s (%.1f dtk, %d KB).",
-                        totalToRun, totalToRun, outWav.getAbsolutePath(), sec, outWav.length() / 1024);
+                        totalToRun, totalToRun, outAudio.getAbsolutePath(), sec, Math.max(1L, outAudio.length() / 1024));
 
                 mainHandler.post(() -> {
                     generating = false;
@@ -1638,8 +1725,50 @@ public class GeminiTtsActivity extends Activity {
     }
 
     private void resetGenerateBtn() {
-        btnGenerate.setText("Konversi ke Audio WAV");
+        btnGenerate.setText("Konversi ke Audio (" + normalizeAudioFmt(selectedAudioFmt).toUpperCase(Locale.ROOT) + ")");
         btnGenerate.setBackground(UiKit.roundedBox(UiKit.ACCENT_AI, Color.TRANSPARENT, UiKit.dp(this, 12), 0));
+    }
+
+    private static String normalizeAudioFmt(String fmt) {
+        if (fmt == null) return "m4a";
+        String low = fmt.trim().toLowerCase(Locale.ROOT);
+        for (String ext : AUDIO_FORMAT_EXTS) {
+            if (ext.equals(low)) return ext;
+        }
+        return "m4a";
+    }
+
+    private static int bitrateForVoice(String fmt) {
+        if ("opus".equals(fmt)) return 48;
+        if ("mp3".equals(fmt)) return 96;
+        return 64; // m4a / aac_low mono sangat bening & hemat (~480 KB/menit)
+    }
+
+    private static int bitrateForMixed(String fmt) {
+        if ("opus".equals(fmt)) return 64;
+        if ("mp3".equals(fmt)) return 128;
+        return 96; // m4a / aac_low stereo (< 1 MB/menit)
+    }
+
+    private void showOutputFormatDialog() {
+        int curIdx = 0;
+        String cur = normalizeAudioFmt(selectedAudioFmt);
+        for (int i = 0; i < AUDIO_FORMAT_EXTS.length; i++) {
+            if (AUDIO_FORMAT_EXTS[i].equals(cur)) { curIdx = i; break; }
+        }
+        UiKit.dialog(this, prefs)
+                .setTitle("Pilih Format Output Audio TTS")
+                .setSingleChoiceItems(AUDIO_FORMAT_LABELS, curIdx, (d, which) -> {
+                    selectedAudioFmt = AUDIO_FORMAT_EXTS[which];
+                    saveSettings();
+                    if (btnOutputFormat != null) {
+                        btnOutputFormat.setText("Format Output Audio: " + selectedAudioFmt.toUpperCase(Locale.ROOT) + " (Hemat & Jernih)");
+                    }
+                    if (!generating && btnGenerate != null) resetGenerateBtn();
+                    d.dismiss();
+                })
+                .setNegativeButton("Tutup", null)
+                .show();
     }
 
     private byte[] requestCloudTtsChunk(String apiKey, String voiceName, String textChunk) throws Exception {
@@ -2113,7 +2242,7 @@ public class GeminiTtsActivity extends Activity {
 
     private void saveWavAs() {
         if (generatedWavFile == null || !generatedWavFile.exists()) return;
-        OfficeUtils.launchFileSaver(this, REQ_SAVE_WAV, generatedWavFile.getName(), "Simpan Audio WAV", "Gemini TTS/Gemini Audio");
+        OfficeUtils.launchFileSaver(this, REQ_SAVE_WAV, generatedWavFile.getName(), "Simpan Audio Gemini TTS", "Gemini TTS/Gemini Audio");
     }
 
     private void saveInputTextAs() {
@@ -2638,9 +2767,9 @@ public class GeminiTtsActivity extends Activity {
                 byte[] buf = new byte[8192];
                 int n;
                 while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
-                Toast.makeText(this, "Audio WAV berhasil disimpan.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "Audio berhasil disimpan.", Toast.LENGTH_LONG).show();
             } catch (Exception e) {
-                Toast.makeText(this, "Gagal simpan WAV: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Gagal simpan audio: " + e.getMessage(), Toast.LENGTH_SHORT).show();
             }
         } else if (requestCode == REQ_PICK_MUSIC) {
             bgMusicUri = uri;
@@ -2713,7 +2842,7 @@ public class GeminiTtsActivity extends Activity {
                 .setTitle("Tambah Backsound Musik ke Suara Gemini TTS")
                 .setView(box)
                 .setNegativeButton("Batal", null)
-                .setPositiveButton("Campur Backsound ke WAV Sekarang", null)
+                .setPositiveButton("Campur Backsound Sekarang", null)
                 .create();
 
         btnChooseBgm.setOnClickListener(v -> StudioGudangAudioManager.showUniversalAudioSourceChooser(
@@ -2769,13 +2898,17 @@ public class GeminiTtsActivity extends Activity {
                 tBgm.loop = true;
                 tracks.add(tBgm);
 
+                String fmt = normalizeAudioFmt(selectedAudioFmt);
+                int br = bitrateForMixed(fmt);
+                int sr = "opus".equals(fmt) ? 48000 : ("wav".equals(fmt) ? SAMPLE_RATE : 44100);
                 File dir = OfficeUtils.resolveBackupSubfolder(this, "Gemini TTS/Gemini Audio");
-                File outMixed = new File(dir, "GeminiTTS_Backsound_" + System.currentTimeMillis() + ".wav");
-                AudioDspEngine.mixMultiTracks(this, tracks, getCacheDir(), outMixed, autoDuck, "wav", 256);
+                File outMixed = new File(dir, "GeminiTTS_Backsound_" + System.currentTimeMillis() + "." + fmt);
+                AudioDspEngine.mixMultiTracks(this, tracks, getCacheDir(), outMixed, autoDuck, fmt, br, sr, 2);
                 generatedWavFile = outMixed;
                 mainHandler.post(() -> {
-                    updateProgressStatus(100, "Selesai mencampur backsound (" + bgName + ") -> " + outMixed.getName(), false);
-                    Toast.makeText(this, "Backsound berhasil dicampur ke audio TTS!", Toast.LENGTH_LONG).show();
+                    updateProgressStatus(100, "Selesai mencampur backsound (" + bgName + ") -> " + outMixed.getName()
+                            + " (" + Math.max(1L, outMixed.length() / 1024) + " KB)", false);
+                    Toast.makeText(this, "Backsound berhasil dicampur ke audio TTS (" + Math.max(1L, outMixed.length() / 1024) + " KB)!", Toast.LENGTH_LONG).show();
                     togglePlay();
                 });
             } catch (final Exception e) {
