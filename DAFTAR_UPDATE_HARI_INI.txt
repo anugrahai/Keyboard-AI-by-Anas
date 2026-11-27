@@ -1,15 +1,10 @@
-KEYBOARD AI BY ANAS — DAFTAR UPDATE v30.0 (OPTIMASI KOMPRESI AUDIO & VIDEO SUPER HEMAT + KUALITAS TETAP JERNIH SEPERTI ORI)
+KEYBOARD AI BY ANAS — DAFTAR UPDATE v31.0 (APK MINI SUPER RAMPING — KOMPRESI 98 AUDIO BACKSOUND KE M4A AAC-LC HEMAT JERNIH)
 
-Pembaruan Utama Rilis v30.0:
-1. OPTIMASI BESAR-BESARAN KOMPRESI AUDIO GEMINI TTS & MIXER BACKSOUND (< 1 MB/MENIT, SUARA TETAP JERNIH):
-- Mengganti format default output Gemini TTS dari WAV PCM mentah (~3–10 MB/menit) menjadi M4A / AAC-LC hemat jernih (64 kbps mono ~480 KB/menit, atau 96 kbps stereo < 1 MB/menit saat dicampur backsound), lengkap dengan pemilih format output langsung (M4A, OPUS 48 kbps, MP3 96 kbps, atau WAV mentah).
-- Menambahkan rantai filter audio bersih (`highpass=f=55` + `alimiter=limit=0.95`) sebelum encoding agar bitrate fokus penuh pada kejernihan vokal tanpa distorsi atau suara mendem.
-- Memperbaiki `AudioDspEngine.mixMultiTracks` dan `mixBacksoundIntoCurrentTtsWav` agar langsung mengekspor sesuai format pilihan yang ringkas & jernih, bukan WAV stereo 44.1 kHz (~10,5 MB/menit).
+Pembaruan Utama Rilis v31.0:
+1. KOMPRESI BESAR-BESARAN UKURAN APK (98 AUDIO GUDANG DARI ~255 MB MENJADI SUPER RAMPING):
+- Mengonversi seluruh 98 koleksi audio Backsound & Efek Drama/Film di `assets/backsound/` ke format M4A / AAC-LC efisien (`40–64 kbps` dengan `-movflags +faststart`) sehingga ukuran APK turun drastis namun kejernihan suara tetap terjaga 100%.
+- Memperbarui `StudioGudangAudioManager` dan `app/build.gradle` (`noCompress += ['mp3', 'm4a']`) agar pemutaran instan dan ekstraksi audio tetap mulus dan kompatibel penuh di seluruh perangkat Android.
 
-2. OPTIMASI KOMPRESI VIDEO GEMINI TTS, STATUS WA & STUDIO EDITOR (Hemat Ukuran hingga 70-85%):
-- Memigrasikan `AudioToVideoConverter` (Ekspor Video MP4 Utuh & Video Status WA) ke mesin FFmpeg `libx264` (`-preset fast -tune stillimage -crf 28 -maxrate 180k`, 6 FPS kartu teks statis + waveform dinamis, audio AAC-LC 64-96 kbps) sehingga video 1 menit turun drastis menjadi ~1 MB saja dengan teks tajam, suara jernih, dan durasi 100% presisi.
-- Mengoptimalkan `AudioDspEngine.renderAudioToVideoMp4` (menghapus `-preset ultrafast` pada latar polos, menurunkan FPS gambar statis ke 5 FPS, CRF 27-28) serta `VideoEditEngine` (CRF default 26, preset `fast`, audio AAC-LC 112-128 kbps yang efisien).
-- Menambahkan preset kompresi vokal jernih M4A 64k/96k & OPUS 48k di Studio Editor Audio Pro dan menyetel default Studio Editor Video Pro ke CRF 26 + Audio 128 kbps.
-
-3. SELURUH FITUR v29.0 TETAP HADIR & TERSEMPURNAKAN:
-- 98 audio MP3 rekaman asli di Studio Gudang & Laboratorium Audio, Studio Efek Film & Drama, dan seluruh fitur office/AI/keyboard.
+2. SELURUH OPTIMASI KOMPRESI v30.0 TETAP HADIR:
+- Output default Gemini TTS & Mixer Backsound berformat M4A/OPUS/MP3 hemat ukuran (< 1 MB/menit) dengan kualitas jernih seperti ori.
+- Konverter Video TTS & Status WA berbasis FFmpeg `libx264` hemat ukuran (~1 MB/menit) serta preset hemat di Studio Editor Audio & Video Pro.
