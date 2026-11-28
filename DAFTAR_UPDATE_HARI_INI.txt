@@ -8,12 +8,11 @@ Pembaruan Utama Rilis v36.0:
    - Folder utama penyimpanan di /storage/emulated/0/ kini menggunakan "Smart Tools and Typing AI by Anas" dengan migrasi otomatis isi folder lama ("Keyboard AI by Anas") saat aplikasi dibuka setelah update.
 
 2. STUDIO PENGUNDUH LAGU & VIDEO PRO (TAB KANTOR — KHUSUS PREMIUM):
-   - Menggunakan engine yt-dlp + aria2c (tanpa API Key) yang dipadukan dengan FFmpeg 8.1 Native (yang sudah terpasang) untuk konversi MP3/WAV dan penggabungan video HD 1080p.
-   - Mendukung tautan Single, Playlist (hingga ratusan lagu), per Channel YouTube, serta pencarian YouTube langsung di dalam aplikasi.
+   - Pencarian YouTube & pemindaian link Single/Playlist/Channel super cepat (~1 detik) via YouTube Innertube, dikombinasikan dengan engine yt-dlp + FFmpeg 8.1 Native (tanpa perlu API Key).
+   - Mendukung Audio (MP3, M4A, OPUS, WAV) lengkap dengan pilihan bitrate 64 kbps s/d 320 kbps, serta Video MP4 (360p, 480p, 720p HD, 1080p Full HD, Terbaik).
    - Mendukung berbagai platform (YouTube, SoundCloud, TikTok, Instagram, Facebook, dll) dengan pembuatan folder dinamis di "Downloader/<Platform>/..." hanya saat tautan diunduh.
    - Dilengkapi fitur Putar Pratinjau (dengarkan lagu atau tonton video langsung sebelum unduh).
-   - Sistem 3 Halaman (bisa digeser kiri/kanan maupun ketuk tab agar 100% aksesibel untuk TalkBack):
-     (1) Link & Cari YouTube (ListView ringan anti-crash untuk ratusan item).
-     (2) Sedang Diunduh (Foreground Service tetap berjalan di latar belakang walau aplikasi ditutup, plus opsi batal 1 per 1, batal banyak terpilih, atau batal semua).
-     (3) Sudah Terunduh (putar, lempar ke Editor Audio/Video Pro, bagikan, atau hapus).
-   - Tersedia tombol "Update yt-dlp" langsung di dalam studio.
+   - Alur Step-by-Step Rapi & Slider Progres: Halaman 1 ringkas (tombol Unduh Semua atau Pilih Per Item via menu daftar), Halaman 2 & bar notifikasi tampil dengan slider progres utama + toggle Tampilkan Semua Lagu + batal 1/banyak/semua yang otomatis bersih seketika saat selesai/batal.
+
+3. PENINGKATAN TAMPILAN PROFESIONAL (UiKit):
+   - Seluruh tampilan pengaturan keyboard dan studio diperbarui dengan kartu permukaan tenang, strip aksen kategori rapi di sisi kiri, serta kontras lembut yang nyaman dipandang dan 100% aksesibel untuk TalkBack / Jieshuo.
