@@ -41,11 +41,14 @@ import android.widget.Toast;
 import android.widget.VideoView;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -141,6 +144,9 @@ public class MediaDownloaderActivity extends Activity implements MediaDownloadSe
     private MediaDownloaderEngine.MediaItem previewItem;
     private boolean previewPrepared = false;
     private boolean userSeeking = false;
+    private LinearLayout dialogPreviewBox;
+    private TextView dialogPreviewLabel;
+    private Button dialogPreviewToggleBtn;
 
     // Halaman 2: Slider Progres Utama + Toggle Tampilkan Semua Lagu (Otomatis Bersih)
     private TextView activeHeadlineText, activeSubText, activePercentText;
@@ -599,6 +605,32 @@ public class MediaDownloaderActivity extends Activity implements MediaDownloadSe
         topBtns.addView(btnPickNone, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         dlgRoot.addView(topBtns);
 
+        // Mini kontrol pemutar langsung di dalam dialog agar saat klik Putar Dulu langsung terlihat & bisa dikontrol
+        dialogPreviewBox = new LinearLayout(this);
+        dialogPreviewBox.setOrientation(LinearLayout.HORIZONTAL);
+        dialogPreviewBox.setGravity(Gravity.CENTER_VERTICAL);
+        dialogPreviewBox.setBackground(UiKit.roundedBox(UiKit.surface(prefs), UiKit.ACCENT_AI_ALT, UiKit.dp(this, 10), UiKit.dp(this, 1)));
+        dialogPreviewBox.setPadding(UiKit.dp(this, 8), UiKit.dp(this, 6), UiKit.dp(this, 8), UiKit.dp(this, 6));
+        dialogPreviewBox.setVisibility(View.GONE);
+        LinearLayout.LayoutParams dpbLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        dpbLp.setMargins(0, 0, 0, UiKit.dp(this, 6));
+
+        dialogPreviewLabel = new TextView(this);
+        dialogPreviewLabel.setTextColor(UiKit.textPrimary(prefs));
+        dialogPreviewLabel.setTextSize(12);
+        dialogPreviewLabel.setTypeface(null, Typeface.BOLD);
+        dialogPreviewLabel.setSingleLine(true);
+        dialogPreviewLabel.setEllipsize(TextUtils.TruncateAt.END);
+        dialogPreviewBox.addView(dialogPreviewLabel, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        dialogPreviewToggleBtn = UiKit.makePillButton(this, "Jeda", UiKit.ACCENT_AI, Color.WHITE, v -> toggleAudioPreviewPlayPause());
+        Button btnDlgStopPrev = UiKit.makePillButton(this, "Stop", UiKit.surfaceAlt(prefs), UiKit.textPrimary(prefs), v -> stopAudioPreview());
+        LinearLayout.LayoutParams btnGap = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        btnGap.setMargins(UiKit.dp(this, 4), 0, 0, 0);
+        dialogPreviewBox.addView(dialogPreviewToggleBtn, btnGap);
+        dialogPreviewBox.addView(btnDlgStopPrev, btnGap);
+        dlgRoot.addView(dialogPreviewBox, dpbLp);
+
         ListView lv = new ListView(this);
         lv.setDividerHeight(UiKit.dp(this, 6));
         lv.setDivider(null);
@@ -637,6 +669,11 @@ public class MediaDownloaderActivity extends Activity implements MediaDownloadSe
                 .setView(dlgRoot)
                 .setNegativeButton("Tutup", null)
                 .create();
+        dlg.setOnDismissListener(d -> {
+            dialogPreviewBox = null;
+            dialogPreviewLabel = null;
+            dialogPreviewToggleBtn = null;
+        });
 
         btnConfirmBottom.setOnClickListener(v -> {
             List<MediaDownloaderEngine.MediaItem> picks = new ArrayList<>();
@@ -1048,19 +1085,21 @@ public class MediaDownloaderActivity extends Activity implements MediaDownloadSe
         previewTimeText.setText("...");
         btnPreviewPlayPause.setText("Memuat");
         btnPreviewPlayPause.setEnabled(false);
+        updateDialogPreviewBanner("Memuat: " + item.title, false, true);
         OfficeUtils.announce(previewBar, "Memuat pratinjau " + item.title);
 
         scanExecutor.submit(() -> {
             try {
-                String streamUrl = MediaDownloaderEngine.fetchPreviewStreamUrl(
+                MediaDownloaderEngine.PreviewResult pr = MediaDownloaderEngine.fetchPreviewResult(
                         this, item.webpageUrl, wantVideo, "prev_" + System.currentTimeMillis());
                 mainHandler.post(() -> {
                     if (isFinishing()) return;
                     if (wantVideo) {
                         previewBar.setVisibility(View.GONE);
-                        showVideoPreviewDialog(item, streamUrl);
+                        updateDialogPreviewBanner("", false, false);
+                        showVideoPreviewDialog(item, pr.url, pr.userAgent);
                     } else {
-                        startAudioPreviewStream(item, streamUrl);
+                        startAudioPreviewStream(item, pr.url, pr.userAgent, true);
                     }
                 });
             } catch (final Throwable err) {
@@ -1069,18 +1108,31 @@ public class MediaDownloaderActivity extends Activity implements MediaDownloadSe
                     previewTitleText.setText("Gagal memuat pratinjau: " + item.title);
                     btnPreviewPlayPause.setText("Putar");
                     btnPreviewPlayPause.setEnabled(false);
+                    updateDialogPreviewBanner("Gagal memuat pratinjau", false, true);
                     Toast.makeText(this, "Pratinjau gagal: " + err.getMessage(), Toast.LENGTH_SHORT).show();
                 });
             }
         });
     }
 
-    private void startAudioPreviewStream(MediaDownloaderEngine.MediaItem item, String streamUrl) {
+    private void updateDialogPreviewBanner(String text, boolean canToggle, boolean show) {
+        if (dialogPreviewBox == null) return;
+        dialogPreviewBox.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (show && dialogPreviewLabel != null) dialogPreviewLabel.setText(text);
+        if (dialogPreviewToggleBtn != null) {
+            dialogPreviewToggleBtn.setEnabled(canToggle);
+            dialogPreviewToggleBtn.setText((audioPreviewPlayer != null && previewPrepared && !audioPreviewPlayer.isPlaying()) ? "Putar" : "Jeda");
+        }
+    }
+
+    private void startAudioPreviewStream(final MediaDownloaderEngine.MediaItem item, final String streamUrl,
+                                         final String userAgent, final boolean allowYtDlpFallback) {
         stopAudioPreview();
         previewItem = item;
         previewBar.setVisibility(View.VISIBLE);
         if (btnPreviewDownload != null) btnPreviewDownload.setVisibility(View.VISIBLE);
-        previewTitleText.setText("Memutar: " + item.title);
+        previewTitleText.setText("Menyiapkan audio: " + item.title);
+        updateDialogPreviewBanner("Menyiapkan: " + item.title, false, true);
         previewPrepared = false;
 
         try {
@@ -1088,7 +1140,78 @@ public class MediaDownloaderActivity extends Activity implements MediaDownloadSe
             audioPreviewPlayer.setAudioAttributes(new AudioAttributes.Builder()
                     .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                     .setUsage(AudioAttributes.USAGE_MEDIA).build());
-            audioPreviewPlayer.setDataSource(streamUrl);
+            if (userAgent != null && !userAgent.isEmpty()) {
+                Map<String, String> headers = new HashMap<>();
+                headers.put("User-Agent", userAgent);
+                audioPreviewPlayer.setDataSource(this, Uri.parse(streamUrl), headers);
+            } else {
+                audioPreviewPlayer.setDataSource(this, Uri.parse(streamUrl));
+            }
+            audioPreviewPlayer.setOnPreparedListener(mp -> {
+                previewPrepared = true;
+                previewSeekBar.setMax(Math.max(1, mp.getDuration()));
+                mp.start();
+                previewTitleText.setText("Memutar: " + item.title);
+                btnPreviewPlayPause.setEnabled(true);
+                btnPreviewPlayPause.setText("Jeda");
+                updateDialogPreviewBanner("Memutar: " + item.title, true, true);
+                mainHandler.removeCallbacks(seekTicker);
+                mainHandler.post(seekTicker);
+            });
+            audioPreviewPlayer.setOnCompletionListener(mp -> {
+                btnPreviewPlayPause.setText("Putar");
+                previewSeekBar.setProgress(0);
+                updateDialogPreviewBanner("Selesai: " + item.title, true, true);
+            });
+            audioPreviewPlayer.setOnErrorListener((mp, what, extra) -> {
+                if (allowYtDlpFallback && !TextUtils.isEmpty(item.webpageUrl)) {
+                    previewTitleText.setText("Mencoba jalur cadangan yt-dlp...");
+                    updateDialogPreviewBanner("Mencoba jalur cadangan...", false, true);
+                    scanExecutor.submit(() -> {
+                        try {
+                            MediaDownloaderEngine.PreviewResult fb = MediaDownloaderEngine.fetchPreviewResultViaYtDlp(
+                                    this, item.webpageUrl, false, "prev_fb_" + System.currentTimeMillis());
+                            mainHandler.post(() -> {
+                                if (!isFinishing()) startAudioPreviewStream(item, fb.url, fb.userAgent, false);
+                            });
+                        } catch (Throwable err) {
+                            mainHandler.post(() -> {
+                                previewTitleText.setText("Stream audio tidak dapat diputar.");
+                                btnPreviewPlayPause.setEnabled(false);
+                                updateDialogPreviewBanner("Gagal memutar audio", false, true);
+                            });
+                        }
+                    });
+                    return true;
+                }
+                previewTitleText.setText("Stream audio tidak dapat diputar.");
+                btnPreviewPlayPause.setEnabled(false);
+                updateDialogPreviewBanner("Gagal memutar audio", false, true);
+                return true;
+            });
+            audioPreviewPlayer.prepareAsync();
+        } catch (Throwable t) {
+            previewTitleText.setText("Gagal memulai pemutar pratinjau.");
+            updateDialogPreviewBanner("Gagal memulai pemutar", false, true);
+        }
+    }
+
+    private void startLocalAudioPreview(File f, String title) {
+        stopAudioPreview();
+        MediaDownloaderEngine.MediaItem fake = new MediaDownloaderEngine.MediaItem();
+        fake.title = title;
+        previewItem = fake;
+        previewBar.setVisibility(View.VISIBLE);
+        if (btnPreviewDownload != null) btnPreviewDownload.setVisibility(View.GONE);
+        previewTitleText.setText("Memutar: " + title);
+        previewPrepared = false;
+
+        try (FileInputStream fis = new FileInputStream(f)) {
+            audioPreviewPlayer = new MediaPlayer();
+            audioPreviewPlayer.setAudioAttributes(new AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .setUsage(AudioAttributes.USAGE_MEDIA).build());
+            audioPreviewPlayer.setDataSource(fis.getFD());
             audioPreviewPlayer.setOnPreparedListener(mp -> {
                 previewPrepared = true;
                 previewSeekBar.setMax(Math.max(1, mp.getDuration()));
@@ -1103,13 +1226,12 @@ public class MediaDownloaderActivity extends Activity implements MediaDownloadSe
                 previewSeekBar.setProgress(0);
             });
             audioPreviewPlayer.setOnErrorListener((mp, what, extra) -> {
-                previewTitleText.setText("Stream audio tidak dapat diputar.");
-                btnPreviewPlayPause.setEnabled(false);
+                Toast.makeText(this, "Gagal memutar berkas lokal.", Toast.LENGTH_SHORT).show();
                 return true;
             });
             audioPreviewPlayer.prepareAsync();
         } catch (Throwable t) {
-            previewTitleText.setText("Gagal memulai pemutar pratinjau.");
+            Toast.makeText(this, "Tidak dapat memutar file: " + t.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -1119,9 +1241,11 @@ public class MediaDownloaderActivity extends Activity implements MediaDownloadSe
             if (audioPreviewPlayer.isPlaying()) {
                 audioPreviewPlayer.pause();
                 btnPreviewPlayPause.setText("Putar");
+                if (dialogPreviewToggleBtn != null) dialogPreviewToggleBtn.setText("Putar");
             } else {
                 audioPreviewPlayer.start();
                 btnPreviewPlayPause.setText("Jeda");
+                if (dialogPreviewToggleBtn != null) dialogPreviewToggleBtn.setText("Jeda");
             }
         } catch (Throwable ignored) {}
     }
@@ -1135,6 +1259,7 @@ public class MediaDownloaderActivity extends Activity implements MediaDownloadSe
             audioPreviewPlayer = null;
         }
         if (previewBar != null) previewBar.setVisibility(View.GONE);
+        updateDialogPreviewBanner("", false, false);
     }
 
     private void updatePreviewSeekProgress() {
@@ -1149,13 +1274,19 @@ public class MediaDownloaderActivity extends Activity implements MediaDownloadSe
         }
     }
 
-    private void showVideoPreviewDialog(final MediaDownloaderEngine.MediaItem item, final String streamUrl) {
+    private void showVideoPreviewDialog(final MediaDownloaderEngine.MediaItem item, final String streamUrl, final String userAgent) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(UiKit.dp(this, 10), UiKit.dp(this, 10), UiKit.dp(this, 10), UiKit.dp(this, 10));
 
         final VideoView vv = new VideoView(this);
-        vv.setVideoURI(Uri.parse(streamUrl));
+        if (userAgent != null && !userAgent.isEmpty()) {
+            Map<String, String> headers = new HashMap<>();
+            headers.put("User-Agent", userAgent);
+            vv.setVideoURI(Uri.parse(streamUrl), headers);
+        } else {
+            vv.setVideoURI(Uri.parse(streamUrl));
+        }
         vv.setOnPreparedListener(mp -> vv.start());
         box.addView(vv, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, UiKit.dp(this, 240)));
 
@@ -1583,10 +1714,7 @@ public class MediaDownloaderActivity extends Activity implements MediaDownloadSe
         if (low.endsWith(".mp4") || low.endsWith(".mkv") || low.endsWith(".webm")) {
             showVideoPreviewDialogForLocal(f, title);
         } else {
-            MediaDownloaderEngine.MediaItem fake = new MediaDownloaderEngine.MediaItem();
-            fake.title = title;
-            startAudioPreviewStream(fake, Uri.fromFile(f).toString());
-            btnPreviewDownload.setVisibility(View.GONE);
+            startLocalAudioPreview(f, title);
         }
     }
 

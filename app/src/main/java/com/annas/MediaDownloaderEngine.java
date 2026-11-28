@@ -341,17 +341,31 @@ public final class MediaDownloaderEngine {
         return item;
     }
 
-    public static String fetchPreviewStreamUrl(Context ctx, String mediaUrl, boolean wantVideo, String processId) throws Exception {
+    public static final class PreviewResult {
+        public String url = "";
+        public String userAgent = "";
+    }
+
+    public static PreviewResult fetchPreviewResult(Context ctx, String mediaUrl, boolean wantVideo, String processId) throws Exception {
         if (YouTubeFastBridge.isYouTubeUrlOrSearch(mediaUrl)) {
             try {
                 YouTubeFastBridge.StreamSpec spec = YouTubeFastBridge.fetchFastStreamSpec(
                         mediaUrl, wantVideo, 480, MODE_AUDIO_M4A, 128);
                 String u = wantVideo ? spec.videoUrl : spec.audioUrl;
-                if (!TextUtils.isEmpty(u)) return u;
+                if (!TextUtils.isEmpty(u)) {
+                    PreviewResult pr = new PreviewResult();
+                    pr.url = u;
+                    pr.userAgent = spec.userAgent;
+                    return pr;
+                }
             } catch (Throwable t) {
                 Log.w(TAG, "Fast preview fallback to yt-dlp: " + t.getMessage());
             }
         }
+        return fetchPreviewResultViaYtDlp(ctx, mediaUrl, wantVideo, processId);
+    }
+
+    public static PreviewResult fetchPreviewResultViaYtDlp(Context ctx, String mediaUrl, boolean wantVideo, String processId) throws Exception {
         ensureInitialized(ctx);
         YoutubeDLRequest req = new YoutubeDLRequest(mediaUrl);
         req.addOption("--no-playlist");
@@ -370,11 +384,18 @@ public final class MediaDownloaderEngine {
             for (String line : lines) {
                 String t = line.trim();
                 if (t.startsWith("http://") || t.startsWith("https://")) {
-                    return t;
+                    PreviewResult pr = new PreviewResult();
+                    pr.url = t;
+                    pr.userAgent = "";
+                    return pr;
                 }
             }
         }
         throw new IllegalStateException("Gagal mengambil stream pratinjau.");
+    }
+
+    public static String fetchPreviewStreamUrl(Context ctx, String mediaUrl, boolean wantVideo, String processId) throws Exception {
+        return fetchPreviewResult(ctx, mediaUrl, wantVideo, processId).url;
     }
 
     public static File resolveTargetDir(Context ctx, MediaItem item, String mode) {

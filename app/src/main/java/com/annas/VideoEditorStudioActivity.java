@@ -292,15 +292,19 @@ public class VideoEditorStudioActivity extends Activity {
             } else if (action == android.view.MotionEvent.ACTION_MOVE && swipeTracking && !swipeTriggered) {
                 float dx = ev.getX() - swipeStartX;
                 float dy = ev.getY() - swipeStartY;
-                float thresh = UiKit.dp(this, 70);
-                if (Math.abs(dx) > thresh && Math.abs(dx) > Math.abs(dy) * 1.6f) {
-                    swipeTriggered = true;
-                    android.view.MotionEvent cancelEv = android.view.MotionEvent.obtain(ev);
-                    cancelEv.setAction(android.view.MotionEvent.ACTION_CANCEL);
-                    super.dispatchTouchEvent(cancelEv);
-                    cancelEv.recycle();
-                    nudgePlayhead(dx < 0 ? -5000L : 5000L);
-                    return true;
+                if (Math.abs(dy) > UiKit.dp(this, 24) && Math.abs(dy) >= Math.abs(dx)) {
+                    swipeTracking = false;
+                } else {
+                    float thresh = UiKit.dp(this, 90);
+                    if (Math.abs(dx) > thresh && Math.abs(dx) > Math.abs(dy) * 2.0f) {
+                        swipeTriggered = true;
+                        android.view.MotionEvent cancelEv = android.view.MotionEvent.obtain(ev);
+                        cancelEv.setAction(android.view.MotionEvent.ACTION_CANCEL);
+                        super.dispatchTouchEvent(cancelEv);
+                        cancelEv.recycle();
+                        nudgePlayhead(dx < 0 ? -5000L : 5000L);
+                        return true;
+                    }
                 }
             } else if (action == android.view.MotionEvent.ACTION_UP || action == android.view.MotionEvent.ACTION_CANCEL) {
                 swipeTracking = false;
@@ -1021,14 +1025,17 @@ public class VideoEditorStudioActivity extends Activity {
         root.setPadding(p, p, p, UiKit.dp(this, 16));
 
         root.addView(buildSubHeaderAndBack("Studio Efek Film, Kartun & Backsound Video"));
-        root.addView(MediaEditorCatalog.makeGuideCard(this, uiPrefs,
-                "Panduan Singkat Efek & Backsound Video",
-                "1. Pilih video/film lalu tekan Putar (geser kiri = mundur 5 detik, geser kanan = maju 5 detik).\n"
-                        + "2. Ketuk 'Kategori' -> pilih Efek Singkat atau Backsound Musik.\n"
-                        + "3. Untuk Efek: tekan Putar untuk tes, lalu centang pas di detik target!\n"
-                        + "4. Untuk Backsound: centang lagu di detik target (otomatis jalan sampai akhir video), atau pakai Tandai Awal / Tandai Akhir di baris lagu itu.\n"
-                        + "5. Setelah beres, ketuk tombol 'Mulai Konversi Video' yang selalu terkunci di pojok kanan bawah layar.",
-                "Semua daftar di satu guliran halus; tombol konversi terkunci di kanan bawah layar."));
+        root.addView(UiKit.makeMenuButton(this,
+                "Panduan Singkat Editor Drama Video (Ketuk untuk Baca)",
+                "Putar video -> pilih Kategori -> centang Efek atau Backsound di detik tujuan -> Konversi.",
+                UiKit.ACCENT_KB_ALT, uiPrefs, v -> UiKit.dialog(this, uiPrefs)
+                        .setTitle("Panduan Singkat Efek & Backsound Video")
+                        .setMessage("1. Pilih video/film lalu tekan Putar (geser kiri/kanan = mundur/maju 5 detik).\n"
+                                + "2. Ketuk 'Kategori' -> pilih Efek Singkat atau Backsound Musik.\n"
+                                + "3. Tekan Putar untuk tes, lalu centang pas di detik target!\n"
+                                + "4. Untuk Backsound yang sudah dicentang, tombol Tandai Awal / Tandai Akhir muncul di baris lagu itu.\n"
+                                + "5. Ketuk 'Mulai Konversi Video' di pojok kanan bawah layar.")
+                        .setPositiveButton("Mengerti", null).show()));
 
         root.addView(buildSimpleVideoPlayerAndCutCard(false));
 
@@ -2779,15 +2786,67 @@ public class VideoEditorStudioActivity extends Activity {
         b.show();
     }
 
-    private void showMultiSavedDialog(List<File> files) {
-        String[] labels = new String[files.size()];
-        for (int i = 0; i < files.size(); i++) {
-            labels[i] = "Bagian " + (i + 1) + ": " + files.get(i).getName() + " (" + fmtSize(files.get(i).length()) + ")";
+    private void showMultiSavedDialog(final List<File> files) {
+        if (files == null || files.isEmpty()) return;
+        ScrollView sv = new ScrollView(this);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(UiKit.dp(this, 14), UiKit.dp(this, 12), UiKit.dp(this, 14), UiKit.dp(this, 12));
+
+        TextView hint = new TextView(this);
+        hint.setText("Ketuk Bagian 1 untuk kirim ke WhatsApp -> setelah kembali, daftar ini tetap terbuka agar bisa lanjut kirim Bagian 2, 3, dst.");
+        hint.setTextColor(UiKit.textMuted(uiPrefs));
+        hint.setTextSize(12.5f);
+        hint.setPadding(0, 0, 0, UiKit.dp(this, 10));
+        root.addView(hint);
+
+        if (files.size() > 1) {
+            Button btnAll = UiKit.makeMenuButton(this,
+                    "Kirim Semua Sekaligus (" + files.size() + " Bagian)",
+                    "Bagikan seluruh bagian sekaligus dalam satu kiriman ke WhatsApp / aplikasi lain.",
+                    UiKit.ACCENT_AI, uiPrefs, v -> shareMultipleFiles(files, "video/mp4"));
+            root.addView(btnAll);
         }
+
+        for (int i = 0; i < files.size(); i++) {
+            final int idx = i;
+            final File f = files.get(i);
+            final String baseTitle = "Bagian " + (idx + 1) + " dari " + files.size() + " (" + fmtSize(f.length()) + ")";
+            final Button btnPart = UiKit.makeMenuButton(this,
+                    baseTitle,
+                    f.getName() + " • Ketuk untuk bagikan ke WhatsApp",
+                    UiKit.ACCENT_OFFICE, uiPrefs, null);
+            btnPart.setOnClickListener(v -> {
+                shareFile(f, "video/mp4");
+                btnPart.setBackground(UiKit.makeAccentCardDrawable(this, uiPrefs, UiKit.ACCENT_KB_ALT));
+                btnPart.setText("✓ " + baseTitle + " — Sudah Dibuka (Ketuk lagi jika ulang)\n" + f.getName());
+            });
+            root.addView(btnPart);
+        }
+        sv.addView(root);
+
         UiKit.dialog(this, uiPrefs)
-                .setTitle("Selesai (" + files.size() + " Berkas Video) — Ketuk Item untuk Membagikan")
-                .setItems(labels, (d, which) -> shareFile(files.get(which), "video/mp4"))
-                .setPositiveButton("Tutup", null).show();
+                .setTitle("Selesai (" + files.size() + " Bagian Video Status WA)")
+                .setView(sv)
+                .setCancelable(false)
+                .setPositiveButton("Selesai / Tutup", null)
+                .show();
+    }
+
+    private void shareMultipleFiles(List<File> files, String mime) {
+        try {
+            ArrayList<Uri> uris = new ArrayList<>();
+            for (File f : files) {
+                uris.add(AudioDspEngine.prepareShareUri(this, f));
+            }
+            Intent i = new Intent(Intent.ACTION_SEND_MULTIPLE);
+            i.setType(mime);
+            i.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(i, "Bagikan " + files.size() + " Bagian"));
+        } catch (Throwable t) {
+            Toast.makeText(this, "Gagal membagikan semua bagian sekaligus: " + t.getMessage(), Toast.LENGTH_LONG).show();
+        }
     }
 
     private void shareFile(File f, String mime) {
