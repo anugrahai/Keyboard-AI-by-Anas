@@ -27,6 +27,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import kotlin.Unit;
 
@@ -348,9 +349,24 @@ public final class MediaDownloaderEngine {
         public String url = "";
         public String userAgent = "";
         public final Map<String, String> headers = new HashMap<>();
+        public boolean fromYtDlp = false;
     }
 
+    private static final class CachedPreview {
+        final PreviewResult result;
+        final long expiresAt;
+        CachedPreview(PreviewResult r, long exp) { this.result = r; this.expiresAt = exp; }
+    }
+
+    private static final ConcurrentHashMap<String, CachedPreview> PREVIEW_CACHE = new ConcurrentHashMap<>();
+
     public static PreviewResult fetchPreviewResult(Context ctx, String mediaUrl, boolean wantVideo, String processId) throws Exception {
+        String cacheKey = (wantVideo ? "V:" : "A:") + mediaUrl;
+        CachedPreview cached = PREVIEW_CACHE.get(cacheKey);
+        if (cached != null && System.currentTimeMillis() < cached.expiresAt && !TextUtils.isEmpty(cached.result.url)) {
+            return cached.result;
+        }
+
         if (YouTubeFastBridge.isYouTubeUrlOrSearch(mediaUrl)) {
             try {
                 YouTubeFastBridge.StreamSpec spec = YouTubeFastBridge.fetchFastStreamSpec(
@@ -360,15 +376,18 @@ public final class MediaDownloaderEngine {
                     PreviewResult pr = new PreviewResult();
                     pr.userAgent = spec.userAgent;
                     if (!TextUtils.isEmpty(spec.userAgent)) pr.headers.put("User-Agent", spec.userAgent);
-                    // Lewatkan proxy loopback lokal agar MediaPlayer Android bebas blokir HTTP 403/redirect
-                    pr.url = LocalStreamProxy.getInstance().registerStream(u, pr.headers);
+                    // Pre-buffer 256 KB + chunked Range 512 KB agar Audio/Video langsung bunyi < 3 detik
+                    pr.url = LocalStreamProxy.getInstance().registerStreamWithPrefetch(u, pr.headers);
+                    PREVIEW_CACHE.put(cacheKey, new CachedPreview(pr, System.currentTimeMillis() + 8 * 60 * 1000L));
                     return pr;
                 }
             } catch (Throwable t) {
                 Log.w(TAG, "Fast preview fallback to yt-dlp: " + t.getMessage());
             }
         }
-        return fetchPreviewResultViaYtDlp(ctx, mediaUrl, wantVideo, processId);
+        PreviewResult pr = fetchPreviewResultViaYtDlp(ctx, mediaUrl, wantVideo, processId);
+        PREVIEW_CACHE.put(cacheKey, new CachedPreview(pr, System.currentTimeMillis() + 8 * 60 * 1000L));
+        return pr;
     }
 
     public static PreviewResult fetchPreviewResultViaYtDlp(Context ctx, String mediaUrl, boolean wantVideo, String processId) throws Exception {
@@ -376,9 +395,12 @@ public final class MediaDownloaderEngine {
         YoutubeDLRequest req = new YoutubeDLRequest(mediaUrl);
         req.addOption("--no-playlist");
         req.addOption("--no-warnings");
+        req.addOption("--ignore-config");
         req.addOption("--no-check-formats");
         req.addOption("--skip-download");
-        req.addOption("--socket-timeout", 10);
+        req.addOption("--geo-bypass");
+        req.addOption("--socket-timeout", 8);
+        req.addOption("--extractor-args", "youtube:player_client=android,ios");
         req.addOption("--dump-single-json");
         if (wantVideo) {
             req.addOption("-f", "best[height<=480][ext=mp4]/best[ext=mp4]/best");
@@ -405,6 +427,7 @@ public final class MediaDownloaderEngine {
                 }
                 if (streamUrl.startsWith("http://") || streamUrl.startsWith("https://")) {
                     PreviewResult pr = new PreviewResult();
+                    pr.fromYtDlp = true;
                     if (hdrObj != null) {
                         Iterator<String> keys = hdrObj.keys();
                         while (keys.hasNext()) {
@@ -414,7 +437,7 @@ public final class MediaDownloaderEngine {
                         }
                     }
                     pr.userAgent = pr.headers.containsKey("User-Agent") ? pr.headers.get("User-Agent") : "";
-                    pr.url = LocalStreamProxy.getInstance().registerStream(streamUrl, pr.headers);
+                    pr.url = LocalStreamProxy.getInstance().registerStreamWithPrefetch(streamUrl, pr.headers);
                     return pr;
                 }
             } catch (Throwable ignored) {}
@@ -505,18 +528,55 @@ public final class MediaDownloaderEngine {
         }
 
         final boolean directCopyPossible = (MODE_AUDIO_M4A.equals(mode) && kbps >= 128) || MODE_AUDIO_OPUS.equals(mode);
-        ensureInitialized(ctx);
-        final int[] lastPct = {0};
-        executeNativeFast(item.webpageUrl, fmtExpr, outTpl, processId, (progress, eta, line) -> {
-            if (listener != null && !listener.isCancelled()) {
-                int p = parseProgressPercent(progress, line, lastPct[0]);
-                lastPct[0] = p;
-                int scaled = directCopyPossible ? p : Math.min(78, Math.round(p * 0.78f));
-                String etaTxt = (eta != null && eta > 0) ? (" • sisa " + eta + "d") : "";
-                listener.onProgress(Math.max(1, scaled), "Mengunduh audio " + p + "%" + etaTxt);
+
+        // Jalur super cepat Java (6-thread parallel Range Innertube) untuk YouTube
+        boolean fastDownloaded = false;
+        if (YouTubeFastBridge.isYouTubeUrlOrSearch(item.webpageUrl)) {
+            try {
+                YouTubeFastBridge.StreamSpec spec = YouTubeFastBridge.fetchFastStreamSpec(
+                        item.webpageUrl, false, 480, mode, kbps);
+                if (!TextUtils.isEmpty(spec.audioUrl)) {
+                    String ext = TextUtils.isEmpty(spec.audioExt) ? "m4a" : spec.audioExt;
+                    File rawFast = new File(tmpRoot, "raw_audio." + ext);
+                    YouTubeFastBridge.downloadUrlFast(spec.audioUrl, spec.userAgent, spec.audioBytes, rawFast,
+                            new YouTubeFastBridge.ByteProgressCallback() {
+                                @Override public void onBytes(long downloadedBytes, long totalBytes) {
+                                    if (listener != null && !listener.isCancelled() && totalBytes > 0) {
+                                        int p = Math.min(100, (int) ((downloadedBytes * 100L) / totalBytes));
+                                        int scaled = (!spec.progressiveSingleFile && directCopyPossible) ? p : Math.min(78, Math.round(p * 0.78f));
+                                        listener.onProgress(Math.max(1, scaled), "Mengunduh cepat " + p + "%");
+                                    }
+                                }
+                                @Override public boolean isCancelled() {
+                                    return listener != null && listener.isCancelled();
+                                }
+                            });
+                    if (rawFast.exists() && rawFast.length() > 0) {
+                        fastDownloaded = true;
+                    }
+                }
+            } catch (InterruptedException ie) {
+                throw ie;
+            } catch (Throwable fastErr) {
+                Log.w(TAG, "Fast audio download fallback to yt-dlp: " + fastErr.getMessage());
+                OfficeUtils.clearDirectoryContents(tmpRoot);
             }
-            return Unit.INSTANCE;
-        });
+        }
+
+        if (!fastDownloaded) {
+            ensureInitialized(ctx);
+            final int[] lastPct = {0};
+            executeNativeFast(item.webpageUrl, fmtExpr, outTpl, processId, (progress, eta, line) -> {
+                if (listener != null && !listener.isCancelled()) {
+                    int p = parseProgressPercent(progress, line, lastPct[0]);
+                    lastPct[0] = p;
+                    int scaled = directCopyPossible ? p : Math.min(78, Math.round(p * 0.78f));
+                    String etaTxt = (eta != null && eta > 0) ? (" • sisa " + eta + "d") : "";
+                    listener.onProgress(Math.max(1, scaled), "Mengunduh audio " + p + "%" + etaTxt);
+                }
+                return Unit.INSTANCE;
+            });
+        }
 
         if (listener != null && listener.isCancelled()) throw new InterruptedException("Dibatalkan.");
         File downloaded = findFirstDownloadedFile(tmpRoot, "raw_audio");
@@ -577,6 +637,82 @@ public final class MediaDownloaderEngine {
         else if (MODE_VIDEO_480.equals(mode)) maxH = 480;
         else if (MODE_VIDEO_1080.equals(mode)) maxH = 1080;
         else if (MODE_VIDEO_BEST.equals(mode)) maxH = 2160;
+
+        // Jalur super cepat Java (6-thread parallel Range) untuk video YouTube
+        if (YouTubeFastBridge.isYouTubeUrlOrSearch(item.webpageUrl)) {
+            try {
+                if (listener != null) listener.onProgress(1, "Mengambil stream cepat video (" + maxH + "p)...");
+                YouTubeFastBridge.StreamSpec spec = YouTubeFastBridge.fetchFastStreamSpec(
+                        item.webpageUrl, true, maxH, MODE_AUDIO_M4A, 128);
+                if (spec.progressiveSingleFile && !TextUtils.isEmpty(spec.videoUrl)) {
+                    File rawSingle = new File(tmpRoot, "single_fast.mp4");
+                    YouTubeFastBridge.downloadUrlFast(spec.videoUrl, spec.userAgent, spec.videoBytes, rawSingle,
+                            new YouTubeFastBridge.ByteProgressCallback() {
+                                @Override public void onBytes(long d, long tot) {
+                                    if (listener != null && !listener.isCancelled() && tot > 0) {
+                                        int p = Math.min(96, (int) ((d * 96L) / tot));
+                                        listener.onProgress(Math.max(1, p), "Unduh cepat video " + p + "%");
+                                    }
+                                }
+                                @Override public boolean isCancelled() {
+                                    return listener != null && listener.isCancelled();
+                                }
+                            });
+                    if (rawSingle.exists() && rawSingle.length() > 0) {
+                        moveOrCopyFile(rawSingle, finalOut);
+                        scanMediaFile(ctx, finalOut);
+                        if (listener != null) listener.onProgress(100, "Selesai");
+                        return finalOut;
+                    }
+                } else if (!TextUtils.isEmpty(spec.videoUrl) && !TextUtils.isEmpty(spec.audioUrl)) {
+                    File vFast = new File(tmpRoot, "v_fast.mp4");
+                    File aFast = new File(tmpRoot, "a_fast." + (TextUtils.isEmpty(spec.audioExt) ? "m4a" : spec.audioExt));
+                    YouTubeFastBridge.downloadUrlFast(spec.videoUrl, spec.userAgent, spec.videoBytes, vFast,
+                            new YouTubeFastBridge.ByteProgressCallback() {
+                                @Override public void onBytes(long d, long tot) {
+                                    if (listener != null && !listener.isCancelled() && tot > 0) {
+                                        int p = Math.min(58, (int) ((d * 58L) / tot));
+                                        listener.onProgress(Math.max(1, p), "Unduh video HD " + Math.min(100, (int) ((d * 100L) / tot)) + "%");
+                                    }
+                                }
+                                @Override public boolean isCancelled() {
+                                    return listener != null && listener.isCancelled();
+                                }
+                            });
+                    YouTubeFastBridge.downloadUrlFast(spec.audioUrl, spec.userAgent, spec.audioBytes, aFast,
+                            new YouTubeFastBridge.ByteProgressCallback() {
+                                @Override public void onBytes(long d, long tot) {
+                                    if (listener != null && !listener.isCancelled() && tot > 0) {
+                                        int p = 58 + Math.min(28, (int) ((d * 28L) / tot));
+                                        listener.onProgress(p, "Unduh audio HD " + Math.min(100, (int) ((d * 100L) / tot)) + "%");
+                                    }
+                                }
+                                @Override public boolean isCancelled() {
+                                    return listener != null && listener.isCancelled();
+                                }
+                            });
+                    if (vFast.exists() && vFast.length() > 0) {
+                        if (listener != null) listener.onProgress(88, "Menggabungkan video & audio (FFmpeg)...");
+                        File tmpMux = new File(tmpRoot, "final_mux.mp4");
+                        String muxCmd = (aFast.exists() && aFast.length() > 0)
+                                ? ("-y -threads 0 -i " + quoteArg(vFast.getAbsolutePath()) + " -i " + quoteArg(aFast.getAbsolutePath())
+                                + " -c:v copy -c:a aac -b:a 128k -shortest -movflags +faststart " + quoteArg(tmpMux.getAbsolutePath()))
+                                : ("-y -threads 0 -i " + quoteArg(vFast.getAbsolutePath())
+                                + " -c copy -movflags +faststart " + quoteArg(tmpMux.getAbsolutePath()));
+                        runFfmpegChecked(muxCmd, listener);
+                        moveOrCopyFile(tmpMux, finalOut);
+                        scanMediaFile(ctx, finalOut);
+                        if (listener != null) listener.onProgress(100, "Selesai");
+                        return finalOut;
+                    }
+                }
+            } catch (InterruptedException ie) {
+                throw ie;
+            } catch (Throwable fastVidErr) {
+                Log.w(TAG, "Fast video download fallback to yt-dlp: " + fastVidErr.getMessage());
+                OfficeUtils.clearDirectoryContents(tmpRoot);
+            }
+        }
 
         final int[] lastPct = {0};
         ensureInitialized(ctx);
@@ -679,13 +815,16 @@ public final class MediaDownloaderEngine {
         YoutubeDLRequest req = new YoutubeDLRequest(url);
         req.addOption("--no-playlist");
         req.addOption("--no-warnings");
+        req.addOption("--ignore-config");
+        req.addOption("--geo-bypass");
         req.addOption("--newline");
         req.addOption("--progress");
-        req.addOption("--socket-timeout", 15);
+        req.addOption("--socket-timeout", 10);
         req.addOption("--retries", 3);
         req.addOption("--fragment-retries", 3);
-        req.addOption("--concurrent-fragments", 4);
-        req.addOption("--http-chunk-size", "10M");
+        req.addOption("--concurrent-fragments", 8);
+        req.addOption("--buffer-size", "64K");
+        req.addOption("--http-chunk-size", "2M");
         req.addOption("-f", formatExpr);
         req.addOption("-o", outTemplate);
         YoutubeDL.getInstance().execute(req, processId, cb);

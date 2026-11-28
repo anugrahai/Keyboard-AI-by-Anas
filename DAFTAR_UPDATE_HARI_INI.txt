@@ -1,7 +1,19 @@
-SMART TOOLS AND TYPING AI BY ANAS — DAFTAR UPDATE v36.1
+SMART TOOLS AND TYPING AI BY ANAS — DAFTAR UPDATE v36.2
 (Layanan Keyboard & Aksesibilitas: Keyboard AI by Anas)
 
-Pembaruan & Perbaikan v36.1:
+Pembaruan & Perbaikan v36.2:
+1. PUTAR PRATINJAU INSTAN (1–3 DETIK) & DOWNLOAD 6-THREAD RANGE PARALEL:
+   - Memperbaiki akar masalah macet/loading 30+ detik saat klik Putar: LocalStreamProxy kini langsung pre-buffer 256 KB di RAM dan memecah stream GoogleVideo ke potongan Range 512 KB agar tidak pernah terkena throttle 32 KB/s maupun HTTP 403 no-range.
+   - Menambahkan client YouTube ANDROID (20.10.38) + probe byte >1 MB agar lagu VEVO/Musik otomatis memakai aliran progresif bebas putus 403.
+   - Memasang cache URL pratinjau + antrean paralel, serta menghubungkan jalur cepat 6-thread Range YouTubeFastBridge langsung ke pengunduhan audio & video (plus tuning yt-dlp 8 concurrent fragments untuk platform non-YouTube).
+
+2. KEYBOARD ARAB STANDAR ORANG AWAS + SIMBOL ARAB + TEKS BERTAJWID LENGKAP (QWERTY & BRAILLE):
+   - Keyboard Arab QWERTY kini mengikuti tata letak standar Arabic 101 orang awas (melengkapi huruf د dan ذ yang sebelumnya terlewat) lengkap dengan baris Harakat cepat.
+   - Menambahkan mode Shift (⇧) khusus Arab berisi huruf Hamzah (أ إ آ ٱ لأ لإ لآ), 7 tanda Waqaf Al-Qur'an (ۖ ۗ ۘ ۙ ۚ ۛ ۜ), Iqlab (ۢ), Sukun Mushaf (ۡ), Sajdah (۩), Rub el Hizb (۞), Akhir Ayat (۝), dan Kaligrafi Islam (ﷺ ﷻ ﷽ ﷲ).
+   - Menu simbol (?123, =\<, dan ع+) saat mode Arab aktif kini 100% khusus simbol, angka Arab Timur (٠–٩), tanda baca Arab, tajwid & mushaf Qur'an.
+   - Keyboard Braille Arab: memperbaiki tabrakan titik pada tanda baca Arab, menambahkan Alif Wasal (ٱ) & Mim Iqlab (ۢ), menambahkan tombol & panel "ع+ Tajwid" (34 halaman Tajwid/Waqaf/Mushaf/Unicode Arab yang dibaca jelas via TTS/TalkBack dengan nama masing-masing tajwid).
+
+3. PEMBARUAN RILIS v36.1 (TERMASUK DI DALAMNYA):
 1. PUTAR PRATINJAU PENGUNDUH SUPER CEPAT (3–5 DETIK — MULTI PLATFORM):
    - Menambahkan LocalStreamProxy (127.0.0.1 loopback + networkSecurityConfig khusus lokal) & probe cepat Range bytes=0-1 agar stream dari YouTube, Facebook, SoundCloud, TikTok, Instagram, dan situs lain langsung diputar mulus oleh MediaPlayer/VideoView tanpa mentok HTTP 403 atau menunggu fallback 1–2 menit.
    - Ekstraksi JSON single-pass yt-dlp lengkap dengan HTTP headers untuk platform non-YouTube agar pratinjau audio & video langsung jalan dalam hitungan detik.

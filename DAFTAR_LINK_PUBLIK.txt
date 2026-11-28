@@ -3,11 +3,11 @@ SONARLAB AUTOMATION - DAFTAR LINK RILIS RESMI
 Diperbarui otomatis : 2026-11-29
 ======================================================================
 
-[1] Smart Tools and Typing AI by Anas — Keyboard AI & Braille (v36.1)
+[1] Smart Tools and Typing AI by Anas — Keyboard AI & Braille (v36.2)
     Repo GitHub     : https://github.com/anugrahai/Keyboard-AI-by-Anas
-    Halaman Release : https://github.com/anugrahai/Keyboard-AI-by-Anas/releases/tag/36.1
-    Download APK    : https://github.com/anugrahai/Keyboard-AI-by-Anas/releases/download/36.1/Smart_Tools_and_Typing_AI_by_Anas_36.1.apk
-    Version Code    : 3610
+    Halaman Release : https://github.com/anugrahai/Keyboard-AI-by-Anas/releases/tag/36.2
+    Download APK    : https://github.com/anugrahai/Keyboard-AI-by-Anas/releases/download/36.2/Smart_Tools_and_Typing_AI_by_Anas_36.2.apk
+    Version Code    : 3620
 
 [2] Whisper Offline Models (v1.0)
     Repo GitHub     : https://github.com/anugrahai/whisper-offline-models

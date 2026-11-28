@@ -1,6 +1,6 @@
 # Smart Tools and Typing AI by Anas (`Keyboard AI by Anas`)
 
-**Versi Terbaru:** v36.1  
+**Versi Terbaru:** v36.2  
 **Developer:** Anugerah Anas  
 **Nama Layanan Keyboard & Aksesibilitas:** `Keyboard AI by Anas`  
 **Nama Aplikasi (Launcher & Suite Alat Cerdas):** `Smart Tools and Typing AI by Anas`
@@ -9,7 +9,9 @@ Aplikasi all-in-one Android yang menggabungkan **Keyboard AI & Braille Aksesibel
 
 ---
 
-## Pembaruan Utama v36.0 – v36.1
+## Pembaruan Utama v36.0 – v36.2
+- **Pratinjau 1–3 Detik & Download 6-Thread Range (v36.2)**: `LocalStreamProxy` pre-buffer 256 KB + chunked Range 512 KB anti-throttle & anti-403, plus jalur unduh cepat 6-thread paralel langsung ke `YouTubeFastBridge`.
+- **Keyboard Arab Standar Awas + Simbol & Teks Bertajwid Lengkap (v36.2)**: Layout standar Arabic 101 di QWERTY lengkap (`ض ص ... ج د`, `ذ`, baris Harakat + Shift Tajwid/Waqaf/Hamzah), halaman simbol khusus Arab saat mode Arab aktif, serta Braille Arab + panel `ع+ Tajwid` (34 halaman) lengkap dengan pembacaan TTS tiap harakat & tajwid.
 - **Putar Pratinjau 3–5 Detik Multi-Platform (v36.1)**: Streaming langsung via `LocalStreamProxy` & header forwarding untuk **YouTube, Facebook, SoundCloud, TikTok, Instagram**, dan situs lain tanpa lag atau error 403.
 - **Editor Drama Klik Langsung & Batal Selektif (v36.1)**: Efek/backsound yang sama bisa dipasang berkali-kali di detik berbeda, tombol **"Nggak Jadi"** hanya muncul setelah audio dipilih, dan bisa membatalkan detik tertentu secara selektif tanpa menghapus titik lainnya.
 - **Nama Aplikasi Baru**: Launcher & suite utama bernama **Smart Tools and Typing AI by Anas**, sedangkan nama di **Setelan Keyboard** dan **Aksesibilitas HP** tetap **Keyboard AI by Anas**.

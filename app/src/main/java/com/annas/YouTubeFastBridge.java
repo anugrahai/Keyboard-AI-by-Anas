@@ -46,8 +46,13 @@ public final class YouTubeFastBridge {
     private static final String TAG = "YouTubeFastBridge";
 
     private static final String UA_WEB = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
+    private static final String UA_ANDROID = "com.google.android.youtube/20.10.38 (Linux; U; Android 14; Pixel 8) gzip";
     private static final String UA_VR = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip";
     private static final String UA_IOS = "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_1 like Mac OS X)";
+
+    private static final int CLIENT_ANDROID = 0;
+    private static final int CLIENT_IOS = 1;
+    private static final int CLIENT_VR = 2;
 
     private static final Pattern PAT_YT_ID = Pattern.compile("(?:v=|youtu\\.be/|shorts/|embed/|live/)([A-Za-z0-9_-]{11})");
     private static final Pattern PAT_LIST_ID = Pattern.compile("[?&]list=([A-Za-z0-9_-]+)");
@@ -165,8 +170,8 @@ public final class YouTubeFastBridge {
             }
         } catch (Throwable ignored) {}
 
-        // 2. Cadangan: Innertube ANDROID_VR player metadata
-        JSONObject player = callInnertubePlayer(videoId, true);
+        // 2. Cadangan: Innertube ANDROID player metadata
+        JSONObject player = callInnertubePlayerByClient(videoId, CLIENT_ANDROID);
         JSONObject vd = player.optJSONObject("videoDetails");
         if (vd != null) {
             MediaDownloaderEngine.MediaItem it = new MediaDownloaderEngine.MediaItem();
@@ -271,13 +276,13 @@ public final class YouTubeFastBridge {
         String videoId = extractYouTubeVideoId(youtubeUrl);
         if (videoId.isEmpty()) throw new IllegalArgumentException("Bukan URL video YouTube.");
 
-        // Coba IOS dulu (lebih sering tembus lagu musik tanpa LOGIN_REQUIRED), lalu ANDROID_VR,
-        // dan verifikasi cepat HTTP 200/206 sebelum diberikan ke MediaPlayer.
+        // Urutan client: ANDROID (mendukung itag=18 progresif + adaptive), IOS, ANDROID_VR.
+        // Cek juga probe > 1 MB agar stream yang dibatasi PO-token di 1 MB langsung terdeteksi & dialihkan ke itag=18.
+        int[] clients = {CLIENT_ANDROID, CLIENT_IOS, CLIENT_VR};
         Throwable lastErr = null;
-        for (int attempt = 0; attempt < 2; attempt++) {
-            boolean useVr = (attempt == 1);
+        for (int clientType : clients) {
             try {
-                JSONObject player = callInnertubePlayer(videoId, useVr);
+                JSONObject player = callInnertubePlayerByClient(videoId, clientType);
                 JSONObject ps = player.optJSONObject("playabilityStatus");
                 String status = ps != null ? ps.optString("status", "") : "";
                 if (!"OK".equalsIgnoreCase(status)) {
@@ -287,18 +292,29 @@ public final class YouTubeFastBridge {
                 if (sd == null) throw new IllegalStateException("streamingData kosong");
 
                 StreamSpec spec = new StreamSpec();
-                spec.userAgent = useVr ? UA_VR : UA_IOS;
+                spec.userAgent = uaForClient(clientType);
 
                 if (!wantVideo) {
                     pickBestAudioFormat(sd.optJSONArray("adaptiveFormats"), targetAudioMode, targetBitrateKbps, spec);
-                    if (!spec.audioUrl.isEmpty() && probeStreamPlayable(spec.audioUrl, spec.userAgent)) {
+                    if (!spec.audioUrl.isEmpty() && probeStreamPlayable(spec.audioUrl, spec.userAgent, spec.audioBytes)) {
+                        return spec;
+                    }
+                    // Jika adaptive 140 diblokir di >1MB (VEVO/musik), pakai progresif MP4 (itag=18) yang kebal blokir 1MB
+                    spec.audioUrl = "";
+                    spec.audioBytes = 0L;
+                    pickProgressiveVideo(sd.optJSONArray("formats"), 480, spec);
+                    if (!spec.videoUrl.isEmpty() && probeStreamPlayable(spec.videoUrl, spec.userAgent, spec.videoBytes)) {
+                        spec.audioUrl = spec.videoUrl;
+                        spec.audioBytes = spec.videoBytes;
+                        spec.audioExt = "mp4";
+                        spec.progressiveSingleFile = true;
                         return spec;
                     }
                     throw new IllegalStateException("Audio URL ditolak (403)");
                 } else {
                     if (maxHeight <= 720) {
                         pickProgressiveVideo(sd.optJSONArray("formats"), maxHeight, spec);
-                        if (!spec.videoUrl.isEmpty() && probeStreamPlayable(spec.videoUrl, spec.userAgent)) {
+                        if (!spec.videoUrl.isEmpty() && probeStreamPlayable(spec.videoUrl, spec.userAgent, spec.videoBytes)) {
                             return spec;
                         }
                         spec.videoUrl = "";
@@ -306,29 +322,52 @@ public final class YouTubeFastBridge {
                     }
                     pickBestVideoAndAudio(sd.optJSONArray("adaptiveFormats"), maxHeight, spec);
                     if (!spec.videoUrl.isEmpty() && !spec.audioUrl.isEmpty()
-                            && probeStreamPlayable(spec.videoUrl, spec.userAgent)) {
+                            && probeStreamPlayable(spec.videoUrl, spec.userAgent, spec.videoBytes)
+                            && probeStreamPlayable(spec.audioUrl, spec.userAgent, spec.audioBytes)) {
                         return spec;
                     }
                     throw new IllegalStateException("Video URL ditolak (403)");
                 }
             } catch (Throwable t) {
                 lastErr = t;
-                Log.w(TAG, "Innertube attempt " + (useVr ? "VR" : "IOS") + " failed: " + t.getMessage());
+                Log.w(TAG, "Innertube client " + clientType + " failed: " + t.getMessage());
             }
         }
         throw new IllegalStateException("Fast stream gagal: " + (lastErr != null ? lastErr.getMessage() : "unknown"));
     }
 
-    private static boolean probeStreamPlayable(String urlStr, String ua) {
+    private static boolean probeStreamPlayable(String urlStr, String ua, long knownBytes) {
+        // Jika file > 1.2 MB, langsung probe byte 1.1 MB dalam 1 roundtrip (jika 206, awal file pasti OK & bebas blokir 1 MB!)
+        if (knownBytes <= 0 || knownBytes > 1200000L) {
+            HttpURLConnection conn = null;
+            try {
+                conn = (HttpURLConnection) new URL(urlStr).openConnection();
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
+                conn.setRequestProperty("User-Agent", ua);
+                conn.setRequestProperty("Range", "bytes=1100000-1100001");
+                int code = conn.getResponseCode();
+                if (code == 200 || code == 206) return true;
+                if (code != 416) return false;
+            } catch (Throwable t) {
+                return false;
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        }
+        return probeRangeByte(urlStr, ua, "bytes=0-1");
+    }
+
+    private static boolean probeRangeByte(String urlStr, String ua, String rangeVal) {
         HttpURLConnection conn = null;
         try {
             conn = (HttpURLConnection) new URL(urlStr).openConnection();
-            conn.setConnectTimeout(6000);
-            conn.setReadTimeout(6000);
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
             conn.setRequestProperty("User-Agent", ua);
-            conn.setRequestProperty("Range", "bytes=0-1");
+            conn.setRequestProperty("Range", rangeVal);
             int code = conn.getResponseCode();
-            return code == 200 || code == 206;
+            return code == 200 || code == 206 || code == 416;
         } catch (Throwable t) {
             return false;
         } finally {
@@ -454,7 +493,7 @@ public final class YouTubeFastBridge {
     private static void downloadParallelRanges(final String urlStr, final String userAgent,
                                                final long totalLen, File outFile,
                                                final ByteProgressCallback cb) throws Exception {
-        final int parts = 4;
+        final int parts = 6;
         final long chunk = totalLen / parts;
         final AtomicLong downloaded = new AtomicLong(0L);
         final AtomicBoolean aborted = new AtomicBoolean(false);
@@ -488,9 +527,9 @@ public final class YouTubeFastBridge {
     private static void downloadRangeSlice(String urlStr, String userAgent, long start, long end,
                                            File outFile, long totalLen, AtomicLong downloaded,
                                            AtomicBoolean aborted, ByteProgressCallback cb) throws Exception {
-        // Pecah lagi ke sub-request maksimal 1.5 MB agar googlevideo selalu ngasih speed penuh
+        // Pecah lagi ke sub-request 512 KB agar googlevideo selalu ngasih speed penuh tanpa throttle
         long pos = start;
-        final long subSize = 1536 * 1024L;
+        final long subSize = 512 * 1024L;
         byte[] buf = new byte[32768];
 
         try (RandomAccessFile raf = new RandomAccessFile(outFile, "rw")) {
@@ -586,21 +625,38 @@ public final class YouTubeFastBridge {
     // HELPERS INNERTUBE & JSON PARSING
     // =========================================================================
 
+    private static String uaForClient(int clientType) {
+        if (clientType == CLIENT_IOS) return UA_IOS;
+        if (clientType == CLIENT_VR) return UA_VR;
+        return UA_ANDROID;
+    }
+
     private static JSONObject callInnertubePlayer(String videoId, boolean useVr) throws Exception {
+        return callInnertubePlayerByClient(videoId, useVr ? CLIENT_VR : CLIENT_IOS);
+    }
+
+    private static JSONObject callInnertubePlayerByClient(String videoId, int clientType) throws Exception {
         JSONObject root = new JSONObject();
         JSONObject ctx = new JSONObject();
         JSONObject client = new JSONObject();
-        if (useVr) {
+        if (clientType == CLIENT_VR) {
             client.put("clientName", "ANDROID_VR");
             client.put("clientVersion", "1.65.10");
             client.put("deviceModel", "Quest 3");
             client.put("androidSdkVersion", 32);
-        } else {
+        } else if (clientType == CLIENT_IOS) {
             client.put("clientName", "IOS");
             client.put("clientVersion", "20.10.4");
             client.put("deviceModel", "iPhone16,2");
             client.put("osName", "iPhone");
             client.put("osVersion", "18.3.1.22D72");
+        } else {
+            client.put("clientName", "ANDROID");
+            client.put("clientVersion", "20.10.38");
+            client.put("deviceModel", "Pixel 8");
+            client.put("osName", "Android");
+            client.put("osVersion", "14");
+            client.put("androidSdkVersion", 34);
         }
         client.put("hl", "id");
         client.put("gl", "ID");
@@ -611,7 +667,7 @@ public final class YouTubeFastBridge {
         root.put("racyCheckOk", true);
 
         String resp = httpPostJson("https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
-                root.toString(), useVr ? UA_VR : UA_IOS, 10000);
+                root.toString(), uaForClient(clientType), 8000);
         return new JSONObject(resp);
     }
 

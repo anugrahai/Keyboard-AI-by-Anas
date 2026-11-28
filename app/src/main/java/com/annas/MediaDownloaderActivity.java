@@ -52,6 +52,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Studio Pengunduh Lagu, Video, Playlist, Channel & Pencarian YouTube Pro.
@@ -113,7 +114,8 @@ public class MediaDownloaderActivity extends Activity implements MediaDownloadSe
 
     private SharedPreferences prefs;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private final ExecutorService scanExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService scanExecutor = Executors.newCachedThreadPool();
+    private final AtomicLong activePreviewSeq = new AtomicLong(0L);
 
     private int activePage = PAGE_INPUT;
     private FrameLayout pageHost;
@@ -1088,23 +1090,24 @@ public class MediaDownloaderActivity extends Activity implements MediaDownloadSe
         updateDialogPreviewBanner("Memuat: " + item.title, false, true);
         OfficeUtils.announce(previewBar, "Memuat pratinjau " + item.title);
 
+        final long mySeq = activePreviewSeq.incrementAndGet();
         scanExecutor.submit(() -> {
             try {
                 MediaDownloaderEngine.PreviewResult pr = MediaDownloaderEngine.fetchPreviewResult(
-                        this, item.webpageUrl, wantVideo, "prev_" + System.currentTimeMillis());
+                        this, item.webpageUrl, wantVideo, "prev_" + mySeq);
                 mainHandler.post(() -> {
-                    if (isFinishing()) return;
+                    if (isFinishing() || activePreviewSeq.get() != mySeq) return;
                     if (wantVideo) {
                         previewBar.setVisibility(View.GONE);
                         updateDialogPreviewBanner("", false, false);
                         showVideoPreviewDialog(item, pr.url, pr.userAgent);
                     } else {
-                        startAudioPreviewStream(item, pr.url, pr.userAgent, true);
+                        startAudioPreviewStream(item, pr.url, pr.userAgent, !pr.fromYtDlp);
                     }
                 });
             } catch (final Throwable err) {
                 mainHandler.post(() -> {
-                    if (isFinishing()) return;
+                    if (isFinishing() || activePreviewSeq.get() != mySeq) return;
                     previewTitleText.setText("Gagal memuat pratinjau: " + item.title);
                     btnPreviewPlayPause.setText("Putar");
                     btnPreviewPlayPause.setEnabled(false);
