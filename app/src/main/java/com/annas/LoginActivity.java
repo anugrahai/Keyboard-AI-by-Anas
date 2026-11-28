@@ -67,7 +67,7 @@ public class LoginActivity extends Activity {
         LinearLayout card = UiKit.makeCard(this, prefs);
 
         TextView badge = new TextView(this);
-        badge.setText("KEYBOARD AI BY ANAS");
+        badge.setText("SMART TOOLS AND TYPING AI BY ANAS");
         badge.setTextColor(UiKit.ACCENT_KB_ALT);
         badge.setTextSize(12);
         badge.setTypeface(null, Typeface.BOLD);

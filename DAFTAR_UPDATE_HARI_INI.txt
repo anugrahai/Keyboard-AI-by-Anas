@@ -1,16 +1,19 @@
-KEYBOARD AI BY ANAS — DAFTAR UPDATE v35.0 (GAYA 6 MODE GEMINI TTS + LOGIKA CERDAS BEBAS REQUEST & ANTI-PENGANTAR)
+SMART TOOLS AND TYPING AI BY ANAS — DAFTAR UPDATE v36.0
+(Layanan Keyboard & Aksesibilitas: Keyboard AI by Anas)
 
-Pembaruan Utama Rilis v35.0:
-1. GAYA 6 RESMI BERUBAH MENJADI `6. Mode Gemini TTS (Dialog, Monolog & Gaya Bebas)` (19 PRESET LENGKAP):
-- Seluruh 11 preset lama (Komedi, Horor, Debat Panas, Deep Talk, Storytime, Drama Religi, Edukasi, Interview, Motivasi, Romansa, Sci-Fi Thriller) diperbarui dari `Speaker1:` tanpa tag menjadi format resmi `Pembicara1:` & `Pembicara2:` lengkap dengan tag ekspresi Gemini TTS (`[tertawa]`, `[terkejut]`, `[hela napas]`, `[napas]`, `[jeda]`, `[jeda panjang]`, `[batuk]`, `[dehem]`, `[semangat]`, `[marah]`, `[kesal]`, `[sedih]`, `[bisik]`, `[takut]`, `[tegas]`, `[lembut]`, `[sinis]`, `[romantis]`, `[panik]`, `[tenang]`, `[kagum]`, `[haru]`, `[ragu]`, `[senyum]`, `[serius]`).
-- Ditambah 8 gaya baru cerdas: `Gaya Bebas Gemini TTS (Bebas Request, Tolong atau Tanpa Tolong)`, `Ubah Teks Saya Jadi Dialog Podcast`, `Beri Bumbu Ekspresi Gemini TTS (Pertahankan Kalimat Asli)`, `Monolog & Voice Over 1 Pembicara Ekspresif`, `Promo & Iklan Komedi Podcast`, `Review & Tutorial Produk Santai`, `Dongeng & Cerita Anak Interaktif`, dan `Drama Konflik & Pengkhianatan`.
+Pembaruan Utama Rilis v36.0:
+1. REBRANDING APLIKASI & MIGRASI FOLDER OTOMATIS:
+   - Nama aplikasi pada Launcher, App Info, Layar Login, dan Header Utama kini resmi menjadi "Smart Tools and Typing AI by Anas".
+   - Nama pada Pengaturan Keyboard (Input Method) dan Layanan Aksesibilitas tetap dipertahankan sebagai "Keyboard AI by Anas".
+   - Folder utama penyimpanan di /storage/emulated/0/ kini menggunakan "Smart Tools and Typing AI by Anas" dengan migrasi otomatis isi folder lama ("Keyboard AI by Anas") saat aplikasi dibuka setelah update.
 
-2. LOGIKA CERDAS DETEKSI NIAT + ZERO KATA PENGANTAR (`KeyboardService.java`):
-- Saat Gaya 6 (`Mode Gemini TTS`) atau `Gaya Bebas` aktif, AI otomatis mengenali 3 niat input tanpa paksaan "Mode Revisi Teks":
-  (a) Perintah/ide (pakai kata "tolong", "bikinin", ataupun langsung topik singkat tanpa kata "tolong") -> langsung buatkan naskah dari 0.
-  (b) Teks/cerita mentah yang sudah ditulis -> diolah jadi dialog/monolog ekspresif tanpa menghilangkan inti pesan.
-  (c) Naskah/dialog yang sudah ada -> diperkaya tag ekspresinya dengan menjaga kalimat asli.
-- Ditambah filter pembersih otomatis (`stripCommonAiPreamble` + `cleanGeminiTtsScriptOutput`) agar AI bebas kata pengantar ("Berikut...", "Tentu..."), bebas markdown `**` / `*`, dan bersih pakai `Pembicara1:` / `Pembicara2:`.
-
-3. EKSTRAK OTOMATIS SAAT UPDATE DARI GITHUB (`MainActivity.java`):
-- `extractDefaultStyles()` versi `v35` otomatis menyinkronkan folder `6. Mode Gemini TTS` di HP saat pertama kali dibuka setelah update (sambil tetap menjaga gaya kustom buatan pengguna), serta menyegarkan `gaya_aktif_prompt` bila masih memakai prompt lama.
+2. STUDIO PENGUNDUH LAGU & VIDEO PRO (TAB KANTOR — KHUSUS PREMIUM):
+   - Menggunakan engine yt-dlp + aria2c (tanpa API Key) yang dipadukan dengan FFmpeg 8.1 Native (yang sudah terpasang) untuk konversi MP3/WAV dan penggabungan video HD 1080p.
+   - Mendukung tautan Single, Playlist (hingga ratusan lagu), per Channel YouTube, serta pencarian YouTube langsung di dalam aplikasi.
+   - Mendukung berbagai platform (YouTube, SoundCloud, TikTok, Instagram, Facebook, dll) dengan pembuatan folder dinamis di "Downloader/<Platform>/..." hanya saat tautan diunduh.
+   - Dilengkapi fitur Putar Pratinjau (dengarkan lagu atau tonton video langsung sebelum unduh).
+   - Sistem 3 Halaman (bisa digeser kiri/kanan maupun ketuk tab agar 100% aksesibel untuk TalkBack):
+     (1) Link & Cari YouTube (ListView ringan anti-crash untuk ratusan item).
+     (2) Sedang Diunduh (Foreground Service tetap berjalan di latar belakang walau aplikasi ditutup, plus opsi batal 1 per 1, batal banyak terpilih, atau batal semua).
+     (3) Sudah Terunduh (putar, lempar ke Editor Audio/Video Pro, bagikan, atau hapus).
+   - Tersedia tombol "Update yt-dlp" langsung di dalam studio.

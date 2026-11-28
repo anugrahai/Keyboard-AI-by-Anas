@@ -722,7 +722,7 @@ public class MainActivity extends Activity {
         headerBar.setPadding(UiKit.dp(this, 16), UiKit.dp(this, 12), UiKit.dp(this, 16), UiKit.dp(this, 12));
 
         headerTitleView = new TextView(this);
-        headerTitleView.setText("Keyboard AI by Anas");
+        headerTitleView.setText("Smart Tools and Typing AI by Anas");
         headerTitleView.setTextSize(18);
         headerTitleView.setTypeface(null, Typeface.BOLD);
         headerTitleView.setTextColor(UiKit.textPrimary(prefs));
@@ -1161,7 +1161,7 @@ public class MainActivity extends Activity {
                 UiKit.ACCENT_AI, prefs, v -> startActivity(new Intent(this, CodeTextEditorActivity.class))));
         box.addView(UiKit.makeMenuButton(this, "File Manager Internal (100% Skrip)",
                 "Jelajahi folder penyimpanan HP, buat folder, dan pilih berkas secara aksesibel",
-                UiKit.ACCENT_KB, prefs, v -> OfficeUtils.launchFilePicker(this, PICK_DOKUMEN_CHAT, "all", "File Manager — Keyboard AI by Anas")));
+                UiKit.ACCENT_KB, prefs, v -> OfficeUtils.launchFilePicker(this, PICK_DOKUMEN_CHAT, "all", "File Manager — Smart Tools and Typing AI by Anas")));
 
         box.addView(UiKit.makeSectionLabel(this, "POTONGAN KODE & SNIPPET", UiKit.ACCENT_KB_ALT));
         box.addView(UiKit.makeMenuButton(this, "Papan Klip — Riwayat & Pin",
@@ -1203,6 +1203,13 @@ public class MainActivity extends Activity {
                 UiKit.ACCENT_KB, prefs, v -> {
                     if (requirePremiumForAi("Studio Editor Audio Pro")) {
                         startActivity(new Intent(MainActivity.this, AudioEditorStudioActivity.class));
+                    }
+                }));
+        box.addView(UiKit.makeMenuButton(this, "Studio Pengunduh Lagu & Video Pro" + lock,
+                "Unduh cepat 1 hingga ratusan lagu/video (YouTube, Playlist, Channel, SoundCloud, TikTok, IG, FB) & Cari YouTube langsung, Putar Pratinjau dulu, Antrean Latar Belakang & Batal Fleksibel",
+                UiKit.ACCENT_OFFICE, prefs, v -> {
+                    if (requirePremiumForAi("Studio Pengunduh Lagu & Video Pro")) {
+                        startActivity(new Intent(MainActivity.this, MediaDownloaderActivity.class));
                     }
                 }));
         box.addView(UiKit.makeMenuButton(this, "Studio Editor Video Pro (36 Fitur)" + lock,

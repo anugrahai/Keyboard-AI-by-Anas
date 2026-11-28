@@ -231,7 +231,7 @@ public final class AuthManager {
     public static String getAccessDeniedToast(Context ctx) {
         AccountStatus st = getCachedStatus(ctx);
         if (!st.signedIn) {
-            return "Belum masuk akun Google. Buka aplikasi Keyboard AI by Anas untuk masuk.";
+            return "Belum masuk akun Google. Buka aplikasi Smart Tools and Typing AI by Anas untuk masuk.";
         }
         if (st.blocked) {
             return "Akun " + st.email + " dinonaktifkan Admin. Hubungi Admin Anas.";
@@ -244,7 +244,7 @@ public final class AuthManager {
                 && (st.lastSyncAt <= 0 || (System.currentTimeMillis() - st.lastSyncAt) > OFFLINE_GRACE_MS)) {
             return "Butuh verifikasi internet (>48 jam offline). Nyalakan data sebentar untuk cek Premium.";
         }
-        return "Fitur AI khusus akun Premium. Buka Keyboard AI by Anas untuk aktivasi.";
+        return "Fitur AI khusus akun Premium. Buka Smart Tools and Typing AI by Anas untuk aktivasi.";
     }
 
     public static AccountStatus getCachedStatus(Context ctx) {

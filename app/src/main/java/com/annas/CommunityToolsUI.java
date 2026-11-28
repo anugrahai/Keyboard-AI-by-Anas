@@ -388,7 +388,7 @@ public final class CommunityToolsUI {
         TextView tvPath = new TextView(act);
         tvPath.setText((granted
                 ? "Penyimpanan Utama Aktif:\n" + targetDir.getAbsolutePath()
-                : "Perhatian: Izin Semua Berkas belum aktif (masih memakai folder cadangan aplikasi). Aktifkan agar cadangan tersimpan langsung di /storage/emulated/0/Keyboard AI by Anas/Cadangan")
+                : "Perhatian: Izin Semua Berkas belum aktif (masih memakai folder cadangan aplikasi). Aktifkan agar cadangan tersimpan langsung di /storage/emulated/0/Smart Tools and Typing AI by Anas/Cadangan")
                 + "\n\nCadangan menyimpan 100% setelan keyboard, Braille, kalibrasi titik, suara, STT, kamus, makro, template cepat, item pin klip, dan berkas gaya bahasa.");
         tvPath.setTextColor(UiKit.textPrimary(prefs));
         tvPath.setTextSize(13);

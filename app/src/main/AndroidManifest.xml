@@ -23,6 +23,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
@@ -47,7 +48,7 @@
 
     <application
         android:allowBackup="true"
-        android:label="Keyboard AI by Anas"
+        android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:requestLegacyExternalStorage="true"
@@ -79,12 +80,13 @@
         <activity
             android:name=".LoginActivity"
             android:exported="false"
-            android:label="Masuk Akun — Keyboard AI by Anas" />
+            android:label="Masuk Akun — Smart Tools and Typing AI by Anas" />
 
         <!-- Layar Pengaturan (MainActivity) -->
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -94,7 +96,7 @@
         <activity
             android:name=".FileManagerActivity"
             android:exported="false"
-            android:label="File Manager Keyboard AI" />
+            android:label="File Manager Smart Tools &amp; Typing AI" />
 
         <activity
             android:name=".DocumentStudioActivity"
@@ -136,6 +138,17 @@
             android:name=".VideoEditorStudioActivity"
             android:exported="false"
             android:label="Studio Editor Video Pro" />
+
+        <activity
+            android:name=".MediaDownloaderActivity"
+            android:exported="false"
+            android:label="Studio Pengunduh Lagu &amp; Video Pro"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+
+        <service
+            android:name=".MediaDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- Pintu 1 File Manager: Pembaca PDF & Dokumen ala Envision AI (Non-AI, OCR Multi-Bahasa) -->
         <activity

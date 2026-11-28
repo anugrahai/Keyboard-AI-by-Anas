@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Smart Tools and Typing AI by Anas</string>
+    <string name="keyboard_service_name">Keyboard AI by Anas</string>
+    <string name="accessibility_service_description">Layanan aksesibilitas Keyboard AI by Anas untuk Smart Reply dan agar gesture TalkBack/JOS tidak mengganggu saat mode Braille aktif (seperti Advanced Braille Keyboard).</string>
+</resources>
