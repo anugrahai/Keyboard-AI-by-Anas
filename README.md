@@ -1,19 +1,21 @@
 # Smart Tools and Typing AI by Anas (`Keyboard AI by Anas`)
 
-**Versi Terbaru:** v36.0  
+**Versi Terbaru:** v36.1  
 **Developer:** Anugerah Anas  
 **Nama Layanan Keyboard & Aksesibilitas:** `Keyboard AI by Anas`  
 **Nama Aplikasi (Launcher & Suite Alat Cerdas):** `Smart Tools and Typing AI by Anas`
 
-Aplikasi all-in-one Android yang menggabungkan **Keyboard AI & Braille Aksesibel**, **Asisten AI Multi-Provider**, **Studio Office & OCR PDF Offline**, **Studio Editor Audio & Video Pro (FFmpeg 8.1)**, **Editor Kode + AI Agent**, serta **Studio Pengunduh Lagu, Video, Playlist & Channel (yt-dlp + aria2c)** dalam satu aplikasi ramah pembaca layar (**TalkBack / Jieshuo**).
+Aplikasi all-in-one Android yang menggabungkan **Keyboard AI & Braille Aksesibel**, **Asisten AI Multi-Provider**, **Studio Office & OCR PDF Offline**, **Studio Editor Audio & Video Pro (FFmpeg 8.1)**, **Editor Kode + AI Agent**, serta **Studio Pengunduh Lagu, Video, Playlist & Channel (`yt-dlp` + YouTube Innertube + FFmpeg 8.1)** dalam satu aplikasi ramah pembaca layar (**TalkBack / Jieshuo**).
 
 ---
 
-## Pembaruan Utama v36.0
+## Pembaruan Utama v36.0 – v36.1
+- **Putar Pratinjau 3–5 Detik Multi-Platform (v36.1)**: Streaming langsung via `LocalStreamProxy` & header forwarding untuk **YouTube, Facebook, SoundCloud, TikTok, Instagram**, dan situs lain tanpa lag atau error 403.
+- **Editor Drama Klik Langsung & Batal Selektif (v36.1)**: Efek/backsound yang sama bisa dipasang berkali-kali di detik berbeda, tombol **"Nggak Jadi"** hanya muncul setelah audio dipilih, dan bisa membatalkan detik tertentu secara selektif tanpa menghapus titik lainnya.
 - **Nama Aplikasi Baru**: Launcher & suite utama bernama **Smart Tools and Typing AI by Anas**, sedangkan nama di **Setelan Keyboard** dan **Aksesibilitas HP** tetap **Keyboard AI by Anas**.
 - **Migrasi Folder Otomatis**: Penyimpanan berpindah otomatis dari `/storage/emulated/0/Keyboard AI by Anas` ke `/storage/emulated/0/Smart Tools and Typing AI by Anas` saat pembaruan pertama kali dibuka.
 - **Studio Pengunduh Lagu & Video Pro** *(Tab Kantor — Khusus Premium)*:
-  - Ditenagai **`yt-dlp` + `aria2c` + FFmpeg 8.1** (tanpa perlu API Key).
+  - Ditenagai **YouTube Innertube (~1 detik) + `yt-dlp` + FFmpeg 8.1** (tanpa perlu API Key).
   - Mendukung unduhan **1 lagu/video**, **Playlist (100–500 item)**, **per Channel**, dan **Pencarian YouTube langsung** di dalam aplikasi.
   - Mendukung **YouTube, SoundCloud, TikTok, Instagram, Facebook**, dan platform lain dengan folder output dinamis (`Downloader/<Platform>/Audio | Video | Playlist | Channel`) yang hanya dibuat saat diunduh.
   - **Putar Pratinjau** sebelum mengunduh (streaming audio/video langsung).

@@ -1027,14 +1027,15 @@ public class VideoEditorStudioActivity extends Activity {
         root.addView(buildSubHeaderAndBack("Studio Efek Film, Kartun & Backsound Video"));
         root.addView(UiKit.makeMenuButton(this,
                 "Panduan Singkat Editor Drama Video (Ketuk untuk Baca)",
-                "Putar video -> pilih Kategori -> centang Efek atau Backsound di detik tujuan -> Konversi.",
+                "Putar video -> pilih Kategori -> ketuk nama Efek/Backsound untuk pasang di detik tujuan -> Konversi.",
                 UiKit.ACCENT_KB_ALT, uiPrefs, v -> UiKit.dialog(this, uiPrefs)
                         .setTitle("Panduan Singkat Efek & Backsound Video")
                         .setMessage("1. Pilih video/film lalu tekan Putar (geser kiri/kanan = mundur/maju 5 detik).\n"
                                 + "2. Ketuk 'Kategori' -> pilih Efek Singkat atau Backsound Musik.\n"
-                                + "3. Tekan Putar untuk tes, lalu centang pas di detik target!\n"
-                                + "4. Untuk Backsound yang sudah dicentang, tombol Tandai Awal / Tandai Akhir muncul di baris lagu itu.\n"
-                                + "5. Ketuk 'Mulai Konversi Video' di pojok kanan bawah layar.")
+                                + "3. Tekan Putar untuk tes, lalu ketuk nama audio pas di detik target (bisa dipasang berulang kali di detik berbeda).\n"
+                                + "4. Jika ingin batal, tombol 'Nggak Jadi' otomatis muncul setelah audio terpasang — bisa hapus detik tertentu saja tanpa menghapus detik lain.\n"
+                                + "5. Untuk Backsound yang sudah terpasang, tombol Tandai Awal / Tandai Akhir muncul di baris lagu itu.\n"
+                                + "6. Ketuk 'Mulai Konversi Video' di pojok kanan bawah layar.")
                         .setPositiveButton("Mengerti", null).show()));
 
         root.addView(buildSimpleVideoPlayerAndCutCard(false));

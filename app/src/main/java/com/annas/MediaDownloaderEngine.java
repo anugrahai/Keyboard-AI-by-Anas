@@ -22,8 +22,11 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import kotlin.Unit;
 
@@ -344,6 +347,7 @@ public final class MediaDownloaderEngine {
     public static final class PreviewResult {
         public String url = "";
         public String userAgent = "";
+        public final Map<String, String> headers = new HashMap<>();
     }
 
     public static PreviewResult fetchPreviewResult(Context ctx, String mediaUrl, boolean wantVideo, String processId) throws Exception {
@@ -354,8 +358,10 @@ public final class MediaDownloaderEngine {
                 String u = wantVideo ? spec.videoUrl : spec.audioUrl;
                 if (!TextUtils.isEmpty(u)) {
                     PreviewResult pr = new PreviewResult();
-                    pr.url = u;
                     pr.userAgent = spec.userAgent;
+                    if (!TextUtils.isEmpty(spec.userAgent)) pr.headers.put("User-Agent", spec.userAgent);
+                    // Lewatkan proxy loopback lokal agar MediaPlayer Android bebas blokir HTTP 403/redirect
+                    pr.url = LocalStreamProxy.getInstance().registerStream(u, pr.headers);
                     return pr;
                 }
             } catch (Throwable t) {
@@ -370,8 +376,10 @@ public final class MediaDownloaderEngine {
         YoutubeDLRequest req = new YoutubeDLRequest(mediaUrl);
         req.addOption("--no-playlist");
         req.addOption("--no-warnings");
-        req.addOption("--socket-timeout", 15);
-        req.addOption("--get-url");
+        req.addOption("--no-check-formats");
+        req.addOption("--skip-download");
+        req.addOption("--socket-timeout", 10);
+        req.addOption("--dump-single-json");
         if (wantVideo) {
             req.addOption("-f", "best[height<=480][ext=mp4]/best[ext=mp4]/best");
         } else {
@@ -379,17 +387,37 @@ public final class MediaDownloaderEngine {
         }
         YoutubeDLResponse resp = YoutubeDL.getInstance().execute(req, processId, null);
         String out = resp != null ? resp.getOut() : "";
-        if (out != null) {
-            String[] lines = out.split("\\r?\\n");
-            for (String line : lines) {
-                String t = line.trim();
-                if (t.startsWith("http://") || t.startsWith("https://")) {
+        if (out != null && !out.trim().isEmpty()) {
+            try {
+                String jsonStr = extractLastJsonObject(out);
+                JSONObject root = new JSONObject(jsonStr);
+                String streamUrl = root.optString("url", "").trim();
+                JSONObject hdrObj = root.optJSONObject("http_headers");
+                if (streamUrl.isEmpty() && root.has("requested_formats")) {
+                    JSONArray rf = root.optJSONArray("requested_formats");
+                    if (rf != null && rf.length() > 0) {
+                        JSONObject first = rf.optJSONObject(0);
+                        if (first != null) {
+                            streamUrl = first.optString("url", "").trim();
+                            if (hdrObj == null) hdrObj = first.optJSONObject("http_headers");
+                        }
+                    }
+                }
+                if (streamUrl.startsWith("http://") || streamUrl.startsWith("https://")) {
                     PreviewResult pr = new PreviewResult();
-                    pr.url = t;
-                    pr.userAgent = "";
+                    if (hdrObj != null) {
+                        Iterator<String> keys = hdrObj.keys();
+                        while (keys.hasNext()) {
+                            String k = keys.next();
+                            String v = hdrObj.optString(k, "");
+                            if (!v.isEmpty()) pr.headers.put(k, v);
+                        }
+                    }
+                    pr.userAgent = pr.headers.containsKey("User-Agent") ? pr.headers.get("User-Agent") : "";
+                    pr.url = LocalStreamProxy.getInstance().registerStream(streamUrl, pr.headers);
                     return pr;
                 }
-            }
+            } catch (Throwable ignored) {}
         }
         throw new IllegalStateException("Gagal mengambil stream pratinjau.");
     }

@@ -1140,12 +1140,12 @@ public class MediaDownloaderActivity extends Activity implements MediaDownloadSe
             audioPreviewPlayer.setAudioAttributes(new AudioAttributes.Builder()
                     .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                     .setUsage(AudioAttributes.USAGE_MEDIA).build());
-            if (userAgent != null && !userAgent.isEmpty()) {
+            if (streamUrl.startsWith("http://127.0.0.1:") || userAgent == null || userAgent.isEmpty()) {
+                audioPreviewPlayer.setDataSource(this, Uri.parse(streamUrl));
+            } else {
                 Map<String, String> headers = new HashMap<>();
                 headers.put("User-Agent", userAgent);
                 audioPreviewPlayer.setDataSource(this, Uri.parse(streamUrl), headers);
-            } else {
-                audioPreviewPlayer.setDataSource(this, Uri.parse(streamUrl));
             }
             audioPreviewPlayer.setOnPreparedListener(mp -> {
                 previewPrepared = true;
@@ -1280,14 +1280,20 @@ public class MediaDownloaderActivity extends Activity implements MediaDownloadSe
         box.setPadding(UiKit.dp(this, 10), UiKit.dp(this, 10), UiKit.dp(this, 10), UiKit.dp(this, 10));
 
         final VideoView vv = new VideoView(this);
-        if (userAgent != null && !userAgent.isEmpty()) {
+        if (streamUrl.startsWith("http://127.0.0.1:") || userAgent == null || userAgent.isEmpty()) {
+            vv.setVideoURI(Uri.parse(streamUrl));
+        } else {
             Map<String, String> headers = new HashMap<>();
             headers.put("User-Agent", userAgent);
             vv.setVideoURI(Uri.parse(streamUrl), headers);
-        } else {
-            vv.setVideoURI(Uri.parse(streamUrl));
         }
         vv.setOnPreparedListener(mp -> vv.start());
+        vv.setOnErrorListener((mp, what, extra) -> {
+            Toast.makeText(MediaDownloaderActivity.this,
+                    "Video pratinjau gagal diputar (" + what + "/" + extra + "). Coba langsung unduh saja.",
+                    Toast.LENGTH_LONG).show();
+            return true;
+        });
         box.addView(vv, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, UiKit.dp(this, 240)));
 
         android.widget.MediaController mc = new android.widget.MediaController(this);
@@ -1724,6 +1730,12 @@ public class MediaDownloaderActivity extends Activity implements MediaDownloadSe
         VideoView vv = new VideoView(this);
         vv.setVideoPath(f.getAbsolutePath());
         vv.setOnPreparedListener(mp -> vv.start());
+        vv.setOnErrorListener((mp, what, extra) -> {
+            Toast.makeText(MediaDownloaderActivity.this,
+                    "Gagal memutar video lokal (" + what + "/" + extra + ").",
+                    Toast.LENGTH_LONG).show();
+            return true;
+        });
         box.addView(vv, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, UiKit.dp(this, 240)));
         android.widget.MediaController mc = new android.widget.MediaController(this);
         mc.setAnchorView(vv);

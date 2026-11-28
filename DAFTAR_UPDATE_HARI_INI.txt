@@ -1,7 +1,17 @@
-SMART TOOLS AND TYPING AI BY ANAS — DAFTAR UPDATE v36.0
+SMART TOOLS AND TYPING AI BY ANAS — DAFTAR UPDATE v36.1
 (Layanan Keyboard & Aksesibilitas: Keyboard AI by Anas)
 
-Pembaruan Utama Rilis v36.0:
+Pembaruan & Perbaikan v36.1:
+1. PUTAR PRATINJAU PENGUNDUH SUPER CEPAT (3–5 DETIK — MULTI PLATFORM):
+   - Menambahkan LocalStreamProxy (127.0.0.1 loopback + networkSecurityConfig khusus lokal) & probe cepat Range bytes=0-1 agar stream dari YouTube, Facebook, SoundCloud, TikTok, Instagram, dan situs lain langsung diputar mulus oleh MediaPlayer/VideoView tanpa mentok HTTP 403 atau menunggu fallback 1–2 menit.
+   - Ekstraksi JSON single-pass yt-dlp lengkap dengan HTTP headers untuk platform non-YouTube agar pratinjau audio & video langsung jalan dalam hitungan detik.
+
+2. PEROMBAKAN EDITOR DRAMA AUDIO & VIDEO (KLIK LANGSUNG + BATAL SELEKTIF):
+   - Mengganti sistem centang menjadi tombol klik langsung per item: efek suara atau backsound yang sama (mis. "Kaca Pecah") bisa dipasang berkali-kali di detik berbeda (mis. 00:01, 01:00, 01:20).
+   - Tombol "Nggak Jadi" kini tersembunyi otomatis saat audio belum dipilih dan hanya muncul setelah audio terpasang.
+   - Pembatalan tidak beruntun (selektif): bisa menghapus satu titik detik tertentu (mis. 01:20 saja) tanpa menghapus detik lainnya (00:01 & 01:00 tetap aman).
+
+3. PEMBARUAN RILIS v36.0 (TERMASUK DI DALAMNYA):
 1. REBRANDING APLIKASI & MIGRASI FOLDER OTOMATIS:
    - Nama aplikasi pada Launcher, App Info, Layar Login, dan Header Utama kini resmi menjadi "Smart Tools and Typing AI by Anas".
    - Nama pada Pengaturan Keyboard (Input Method) dan Layanan Aksesibilitas tetap dipertahankan sebagai "Keyboard AI by Anas".

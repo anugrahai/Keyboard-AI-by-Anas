@@ -7,11 +7,15 @@ import android.graphics.Typeface;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.text.Editable;
+import android.text.SpannableString;
+import android.text.Spanned;
 import android.text.TextWatcher;
+import android.text.style.AbsoluteSizeSpan;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -22,13 +26,13 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Mesin Palet Kategori & Centang Efek / Backsound (Live Drama & Film Studio).
- * - Seluruh tampilan menyatu dalam 1 ScrollView utama (TIDAK ada ListView bersarang).
- * - Update baris centang/putar/tandai dilakukan IN-PLACE tanpa menghancurkan View daftar,
- *   sehingga fokus TalkBack & posisi gulir tidak pernah meloncat atau berkedip.
- * - Tombol "Tandai Awal" & "Tandai Akhir" Backsound menempel langsung pada baris Backsound
- *   yang bersangkutan (di bawah judul & tombol Putar lagu tersebut), BUKAN ditaruh di atas layar.
- * - Untuk Efek Singkat, hanya tampil CheckBox + tombol Putar agar bersih & bebas bingung.
+ * Mesin Palet Kategori & Pemasangan Efek / Backsound (Live Drama & Film Studio).
+ * - Sistem Klik Langsung: ketuk nama audio untuk langsung memasang di detik pemutar saat ini.
+ *   Audio yang sama dapat diklik berkali-kali di detik berbeda (misal detik 1, 60, 80).
+ * - Di samping nama audio ada tombol "Putar" untuk tes, dan tombol "Nggak Jadi" yang HANYA
+ *   muncul apabila audio tersebut sudah dipilih/dipasang minimal 1 kali.
+ * - Pembatalan selektif (tidak beruntun): jika audio dipasang di detik 1, 60, & 80 lalu
+ *   menekan "Nggak Jadi", pengguna dapat memilih menghapus detik 80 saja tanpa menyentuh detik lain.
  */
 public final class DramaSoundPaletteHelper {
 
@@ -78,8 +82,9 @@ public final class DramaSoundPaletteHelper {
 
     private static final class ItemRowHolder {
         StudioGudangAudioManager.GudangItem item;
-        CheckBox cb;
+        Button btnPick;
         Button btnPlay;
+        Button btnCancel;
         LinearLayout inlineBgmPanel;
         TextView tvBgmStatus;
         Button btnMarkStart;
@@ -99,7 +104,6 @@ public final class DramaSoundPaletteHelper {
         public String searchQuery = "";
         public boolean autoPreRoll2Sec = true;
         private int renderLimit = INITIAL_RENDER_LIMIT;
-        private boolean suppressCheckCallback = false;
 
         private final List<String> tabLabels = new ArrayList<>();
         private final List<String> tabFilterKeys = new ArrayList<>();
@@ -155,7 +159,16 @@ public final class DramaSoundPaletteHelper {
             return false;
         }
 
-        private CueItem findCueByAssetId(String assetId) {
+        private List<CueItem> findCuesByAssetId(String assetId) {
+            List<CueItem> matched = new ArrayList<>();
+            if (assetId == null || assetId.isEmpty()) return matched;
+            for (CueItem c : cues) {
+                if (assetId.equals(c.assetId)) matched.add(c);
+            }
+            return matched;
+        }
+
+        private CueItem findLatestCueByAssetId(String assetId) {
             if (assetId == null || assetId.isEmpty()) return null;
             for (int i = cues.size() - 1; i >= 0; i--) {
                 if (assetId.equals(cues.get(i).assetId)) return cues.get(i);
@@ -164,9 +177,8 @@ public final class DramaSoundPaletteHelper {
         }
 
         public void mountInto(LinearLayout parentRoot) {
-            // KARTU B: PILIH KATEGORI + CARI + DAFTAR CENTANG LANGSUNG LURUS KE BAWAH
             LinearLayout tabCard = UiKit.makeCard(act, prefs);
-            tabCard.addView(UiKit.makeSectionLabel(act, "B. PILIH KATEGORI & CENTANG EFEK / BACKSOUND", UiKit.ACCENT_OFFICE));
+            tabCard.addView(UiKit.makeSectionLabel(act, "B. PILIH KATEGORI & KETUK AUDIO UNTUK PASANG", UiKit.ACCENT_OFFICE));
 
             btnCategoryPicker = UiKit.makeMenuButton(act,
                     "Pilih Kategori Efek / Backsound",
@@ -191,9 +203,9 @@ public final class DramaSoundPaletteHelper {
             tabCard.addView(etSearch);
 
             tvContextGuide = new TextView(act);
-            tvContextGuide.setTextSize(12.5f);
+            tvContextGuide.setTextSize(12f);
             tvContextGuide.setTextColor(UiKit.textMuted(prefs));
-            tvContextGuide.setPadding(0, UiKit.dp(act, 4), 0, UiKit.dp(act, 8));
+            tvContextGuide.setPadding(0, UiKit.dp(act, 2), 0, UiKit.dp(act, 8));
             tabCard.addView(tvContextGuide);
 
             itemsListBox = new LinearLayout(act);
@@ -202,7 +214,6 @@ public final class DramaSoundPaletteHelper {
 
             parentRoot.addView(tabCard);
 
-            // KARTU C: DAFTAR TERPASANG & UNDO NGGAK JADI
             mountedListContainer = new LinearLayout(act);
             mountedListContainer.setOrientation(LinearLayout.VERTICAL);
             parentRoot.addView(mountedListContainer);
@@ -249,11 +260,9 @@ public final class DramaSoundPaletteHelper {
             }
             if (tvContextGuide != null) {
                 if (isCurrentCategoryBacksound()) {
-                    tvContextGuide.setText(
-                            "Putar untuk tes • Centang di detik tujuan untuk pasang (tombol Tandai Awal/Akhir muncul setelah dicentang).");
+                    tvContextGuide.setText("Ketuk nama lagu untuk pasang di detik berjalan (bisa pasang beberapa segmen). Putar untuk tes, Nggak Jadi untuk batal per detik.");
                 } else {
-                    tvContextGuide.setText(
-                            "Putar untuk tes • Centang di detik tujuan untuk pasang efek.");
+                    tvContextGuide.setText("Ketuk nama efek untuk langsung pasang di detik berjalan (bisa ketuk berkali-kali di detik berbeda). Putar untuk tes, Nggak Jadi untuk hapus detik tertentu.");
                 }
             }
         }
@@ -276,10 +285,10 @@ public final class DramaSoundPaletteHelper {
                     else if (key.equals(it.categoryFolder)) filteredItems.add(it);
                 }
             }
-            buildCheckListViews();
+            buildClickListViews();
         }
 
-        private void buildCheckListViews() {
+        private void buildClickListViews() {
             if (itemsListBox == null) return;
             itemsListBox.removeAllViews();
             renderedRows.clear();
@@ -301,49 +310,59 @@ public final class DramaSoundPaletteHelper {
 
                 LinearLayout cardRow = new LinearLayout(act);
                 cardRow.setOrientation(LinearLayout.VERTICAL);
-                cardRow.setPadding(UiKit.dp(act, 8), UiKit.dp(act, 7), UiKit.dp(act, 8), UiKit.dp(act, 7));
-                cardRow.setBackground(UiKit.roundedBox(UiKit.surfaceAlt(prefs), Color.TRANSPARENT, UiKit.dp(act, 8), 0));
+                cardRow.setPadding(UiKit.dp(act, 8), UiKit.dp(act, 6), UiKit.dp(act, 8), UiKit.dp(act, 6));
+                cardRow.setBackground(UiKit.roundedBox(UiKit.surfaceAlt(prefs), UiKit.border(prefs), UiKit.dp(act, 10), UiKit.dp(act, 1)));
                 LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, -2);
                 rlp.bottomMargin = UiKit.dp(act, 6);
                 cardRow.setLayoutParams(rlp);
 
-                // Baris 1: CheckBox Judul (kiri) + Tombol Putar/Jeda (kanan)
+                // Baris 1: [Nama Audio (Klik = Tambah di detik berjalan)] | [Putar] | [Nggak Jadi (muncul jika sudah dipasang)]
                 LinearLayout topLine = new LinearLayout(act);
                 topLine.setOrientation(LinearLayout.HORIZONTAL);
                 topLine.setGravity(Gravity.CENTER_VERTICAL);
 
-                CheckBox cb = new CheckBox(act);
-                cb.setTextSize(13.5f);
-                cb.setTextColor(UiKit.textPrimary(prefs));
-                cb.setText(item.title);
-                cb.setOnCheckedChangeListener((btn, checked) -> {
-                    if (suppressCheckCallback) return;
-                    if (checked) {
-                        attachAssetItemNow(item, holder);
-                    } else {
-                        removeAssetItemAsCancel(item);
-                    }
-                });
-                topLine.addView(cb, new LinearLayout.LayoutParams(0, -2, 1f));
-                holder.cb = cb;
+                Button btnPick = new Button(act);
+                btnPick.setAllCaps(false);
+                btnPick.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+                btnPick.setBackgroundColor(Color.TRANSPARENT);
+                btnPick.setPadding(UiKit.dp(act, 4), UiKit.dp(act, 6), UiKit.dp(act, 6), UiKit.dp(act, 6));
+                btnPick.setOnClickListener(v -> attachAssetItemNow(item));
+                topLine.addView(btnPick, new LinearLayout.LayoutParams(0, -2, 1f));
+                holder.btnPick = btnPick;
 
                 Button btnTest = new Button(act);
                 btnTest.setAllCaps(false);
-                btnTest.setTextSize(12.5f);
-                btnTest.setPadding(UiKit.dp(act, 12), UiKit.dp(act, 7), UiKit.dp(act, 12), UiKit.dp(act, 7));
+                btnTest.setTextSize(12f);
+                btnTest.setPadding(UiKit.dp(act, 10), UiKit.dp(act, 6), UiKit.dp(act, 10), UiKit.dp(act, 6));
                 btnTest.setOnClickListener(v -> {
                     host.stopPlaybackForPreviewSwitch();
                     StudioGudangAudioManager.togglePlayPauseItem(act, item, () -> syncPlayButtonsInPlace());
                 });
                 topLine.addView(btnTest, new LinearLayout.LayoutParams(-2, -2));
                 holder.btnPlay = btnTest;
+
+                Button btnCancel = new Button(act);
+                btnCancel.setAllCaps(false);
+                btnCancel.setText("Nggak Jadi");
+                btnCancel.setTextSize(11.5f);
+                btnCancel.setTextColor(Color.WHITE);
+                btnCancel.setBackground(UiKit.roundedBox(UiKit.ACCENT_DANGER, Color.TRANSPARENT, UiKit.dp(act, 8), 0));
+                btnCancel.setPadding(UiKit.dp(act, 9), UiKit.dp(act, 6), UiKit.dp(act, 9), UiKit.dp(act, 6));
+                LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-2, -2);
+                clp.leftMargin = UiKit.dp(act, 5);
+                btnCancel.setVisibility(View.GONE);
+                btnCancel.setOnClickListener(v -> handleSelectiveCancelForAsset(item));
+                topLine.addView(btnCancel, clp);
+                holder.btnCancel = btnCancel;
+
                 cardRow.addView(topLine);
 
-                // Baris 2 (KHUSUS BACKSOUND): Tandai Awal & Tandai Akhir menempel langsung pada baris lagunya!
+                // Baris 2 (KHUSUS BACKSOUND SAAT SUDAH TERPASANG): Tandai Awal & Tandai Akhir
                 if (item.isBacksound) {
                     LinearLayout bgmBox = new LinearLayout(act);
                     bgmBox.setOrientation(LinearLayout.VERTICAL);
                     bgmBox.setPadding(UiKit.dp(act, 4), UiKit.dp(act, 4), UiKit.dp(act, 4), 0);
+                    bgmBox.setVisibility(View.GONE);
 
                     TextView tvStat = new TextView(act);
                     tvStat.setTextSize(11.5f);
@@ -356,12 +375,12 @@ public final class DramaSoundPaletteHelper {
 
                     Button btnStart = OfficeUtils.makeRowButton(act,
                             "Tandai Awal",
-                            "Tandai detik pemutar saat ini sebagai titik masuk awal untuk " + item.title,
+                            "Tandai detik pemutar saat ini sebagai titik awal untuk " + item.title,
                             UiKit.ACCENT_KB, Color.WHITE,
                             v -> handleMarkBacksoundStart(item));
                     Button btnEnd = OfficeUtils.makeRowButton(act,
                             "Tandai Akhir",
-                            "Tandai detik pemutar saat ini sebagai titik berhenti akhir untuk " + item.title,
+                            "Tandai detik pemutar saat ini sebagai titik akhir untuk " + item.title,
                             UiKit.ACCENT_WARM, Color.WHITE,
                             v -> handleMarkBacksoundEnd(item));
                     Button btnResetEnd = OfficeUtils.makeRowButton(act,
@@ -395,7 +414,7 @@ public final class DramaSoundPaletteHelper {
                         "Memuat daftar audio berikutnya dalam guliran yang sama",
                         UiKit.ACCENT_AI, prefs, v -> {
                             renderLimit += INITIAL_RENDER_LIMIT;
-                            buildCheckListViews();
+                            buildClickListViews();
                         });
                 itemsListBox.addView(btnMore);
             }
@@ -414,43 +433,114 @@ public final class DramaSoundPaletteHelper {
         }
 
         private void syncAllRowHoldersInPlace() {
-            suppressCheckCallback = true;
-            try {
-                for (ItemRowHolder h : renderedRows) {
-                    CueItem mounted = findCueByAssetId(h.item.id);
-                    boolean isMounted = (mounted != null);
-                    if (h.cb.isChecked() != isMounted) {
-                        h.cb.setChecked(isMounted);
-                    }
-                    h.cb.setContentDescription((isMounted ? "Terpasang: " : "") + h.item.title
-                            + ". Centang untuk menempel di detik pemutar sekarang, lepas centang jika nggak jadi.");
+            for (ItemRowHolder h : renderedRows) {
+                List<CueItem> matched = findCuesByAssetId(h.item.id);
+                boolean isMounted = !matched.isEmpty();
 
-                    if (h.item.isBacksound && h.inlineBgmPanel != null) {
-                        h.inlineBgmPanel.setVisibility(isMounted ? View.VISIBLE : View.GONE);
+                if (isMounted) {
+                    StringBuilder times = new StringBuilder();
+                    for (int i = 0; i < matched.size(); i++) {
+                        if (i > 0) times.append(", ");
+                        times.append(AudioDspEngine.formatMsShort(matched.get(i).atMs));
                     }
-                    if (h.item.isBacksound && h.tvBgmStatus != null && isMounted) {
-                        String endTxt = (mounted.endMs > mounted.atMs)
-                                ? AudioDspEngine.formatMsShort(mounted.endMs)
+                    String mainTitle = h.item.title;
+                    String sub = "Terpasang " + matched.size() + "x (" + times + ") • Ketuk lagi untuk tambah di detik baru";
+                    String full = mainTitle + "\n" + sub;
+                    SpannableString span = new SpannableString(full);
+                    span.setSpan(new StyleSpan(Typeface.BOLD), 0, mainTitle.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    span.setSpan(new AbsoluteSizeSpan(13, true), 0, mainTitle.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    span.setSpan(new ForegroundColorSpan(UiKit.ACCENT_OFFICE), 0, mainTitle.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    span.setSpan(new AbsoluteSizeSpan(11, true), mainTitle.length() + 1, full.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    span.setSpan(new ForegroundColorSpan(UiKit.textMuted(prefs)), mainTitle.length() + 1, full.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    h.btnPick.setText(span);
+                    h.btnPick.setContentDescription(mainTitle + ". Sudah terpasang " + matched.size() + " kali di detik " + times + ". Ketuk untuk pasang lagi di detik sekarang.");
+                } else {
+                    h.btnPick.setText(h.item.title);
+                    h.btnPick.setTextSize(13.5f);
+                    h.btnPick.setTypeface(null, Typeface.BOLD);
+                    h.btnPick.setTextColor(UiKit.textPrimary(prefs));
+                    h.btnPick.setContentDescription("Pasang " + h.item.title + " di detik pemutar sekarang");
+                }
+
+                // Tombol Nggak Jadi HANYA tampil kalau audio ini sudah dipilih minimal 1x!
+                if (h.btnCancel != null) {
+                    h.btnCancel.setVisibility(isMounted ? View.VISIBLE : View.GONE);
+                    h.btnCancel.setContentDescription("Nggak jadi pakai " + h.item.title);
+                }
+
+                if (h.item.isBacksound && h.inlineBgmPanel != null) {
+                    h.inlineBgmPanel.setVisibility(isMounted ? View.VISIBLE : View.GONE);
+                    if (isMounted && h.tvBgmStatus != null) {
+                        CueItem latest = matched.get(matched.size() - 1);
+                        String endTxt = (latest.endMs > latest.atMs)
+                                ? AudioDspEngine.formatMsShort(latest.endMs)
                                 : "Sampai Akhir";
-                        h.tvBgmStatus.setText("Terpasang: Mulai " + AudioDspEngine.formatMsShort(mounted.atMs)
-                                + " -> " + endTxt);
+                        h.tvBgmStatus.setText("Terakhir: Mulai " + AudioDspEngine.formatMsShort(latest.atMs) + " -> " + endTxt);
                         h.tvBgmStatus.setTextColor(UiKit.ACCENT_KB_ALT);
                         h.tvBgmStatus.setTypeface(null, Typeface.BOLD);
                         if (h.btnResetEnd != null) {
-                            h.btnResetEnd.setVisibility(mounted.endMs > mounted.atMs ? View.VISIBLE : View.GONE);
+                            h.btnResetEnd.setVisibility(latest.endMs > latest.atMs ? View.VISIBLE : View.GONE);
                         }
                     }
                 }
-            } finally {
-                suppressCheckCallback = false;
             }
             syncPlayButtonsInPlace();
+        }
+
+        /**
+         * Menghapus item secara selektif (TIDAK beruntun):
+         * - Jika terpasang 1x -> langsung hapus yang 1 itu.
+         * - Jika terpasang >1x (misal detik 1, detik 60, detik 80) -> munculkan daftar detik agar pengguna
+         *   bisa menghapus detik 80 saja tanpa menyentuh detik 1 dan detik 60!
+         */
+        private void handleSelectiveCancelForAsset(final StudioGudangAudioManager.GudangItem item) {
+            final List<CueItem> matched = findCuesByAssetId(item.id);
+            if (matched.isEmpty()) return;
+
+            if (matched.size() == 1) {
+                CueItem target = matched.get(0);
+                pushUndo();
+                stopLoopPlayer(target);
+                cues.remove(target);
+                refreshAllInPlace();
+                Toast.makeText(act, "Nggak jadi: " + item.title + " (" + AudioDspEngine.formatMsShort(target.atMs) + ")", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            final String[] choices = new String[matched.size() + 1];
+            for (int i = 0; i < matched.size(); i++) {
+                CueItem c = matched.get(i);
+                choices[i] = "Hapus di detik " + AudioDspEngine.formatMsShort(c.atMs)
+                        + (c.isBacksoundLoop && c.endMs > c.atMs ? (" -> " + AudioDspEngine.formatMsShort(c.endMs)) : "");
+            }
+            choices[matched.size()] = "Hapus Semua \"" + item.title + "\" (" + matched.size() + " item)";
+
+            UiKit.dialog(act, prefs)
+                    .setTitle("Nggak Jadi yang Mana? (" + item.title + ")")
+                    .setItems(choices, (d, which) -> {
+                        pushUndo();
+                        if (which == matched.size()) {
+                            for (CueItem c : matched) {
+                                stopLoopPlayer(c);
+                                cues.remove(c);
+                            }
+                            Toast.makeText(act, "Semua \"" + item.title + "\" dihapus.", Toast.LENGTH_SHORT).show();
+                        } else {
+                            CueItem target = matched.get(which);
+                            stopLoopPlayer(target);
+                            cues.remove(target);
+                            Toast.makeText(act, "Dihapus: " + item.title + " di detik " + AudioDspEngine.formatMsShort(target.atMs), Toast.LENGTH_SHORT).show();
+                        }
+                        refreshAllInPlace();
+                    })
+                    .setNegativeButton("Batal", null)
+                    .show();
         }
 
         private void handleMarkBacksoundStart(final StudioGudangAudioManager.GudangItem item) {
             final long pos = host.getPlayheadMs();
             StudioGudangAudioManager.stopPreview();
-            CueItem existing = findCueByAssetId(item.id);
+            CueItem existing = findLatestCueByAssetId(item.id);
             if (existing != null) {
                 pushUndo();
                 existing.atMs = pos;
@@ -458,12 +548,8 @@ public final class DramaSoundPaletteHelper {
                     existing.endMs = 0L;
                 }
                 refreshAllInPlace();
-                Toast.makeText(act,
-                        "Titik Awal \"" + item.title + "\" diset di " + AudioDspEngine.formatMsShort(pos),
-                        Toast.LENGTH_SHORT).show();
-                if (autoPreRoll2Sec && host.getTotalDurationMs() > 0) {
-                    host.playTransitionFromMs(existing.atMs);
-                }
+                Toast.makeText(act, "Titik Awal \"" + item.title + "\" diset di " + AudioDspEngine.formatMsShort(pos), Toast.LENGTH_SHORT).show();
+                if (autoPreRoll2Sec && host.getTotalDurationMs() > 0) host.playTransitionFromMs(existing.atMs);
             } else {
                 attachBacksoundWithRange(item, pos, 0L);
             }
@@ -472,26 +558,20 @@ public final class DramaSoundPaletteHelper {
         private void handleMarkBacksoundEnd(final StudioGudangAudioManager.GudangItem item) {
             final long pos = host.getPlayheadMs();
             StudioGudangAudioManager.stopPreview();
-            CueItem existing = findCueByAssetId(item.id);
+            CueItem existing = findLatestCueByAssetId(item.id);
             if (existing != null) {
                 if (pos <= existing.atMs + 300L) {
-                    Toast.makeText(act,
-                            "Titik Akhir (" + AudioDspEngine.formatMsShort(pos) + ") harus setelah Titik Awal ("
-                                    + AudioDspEngine.formatMsShort(existing.atMs) + ").",
-                            Toast.LENGTH_LONG).show();
+                    Toast.makeText(act, "Titik Akhir (" + AudioDspEngine.formatMsShort(pos) + ") harus setelah Titik Awal ("
+                            + AudioDspEngine.formatMsShort(existing.atMs) + ").", Toast.LENGTH_LONG).show();
                     return;
                 }
                 pushUndo();
                 existing.endMs = pos;
                 refreshAllInPlace();
-                Toast.makeText(act,
-                        "Titik Akhir \"" + item.title + "\" ditandai di " + AudioDspEngine.formatMsShort(pos),
-                        Toast.LENGTH_SHORT).show();
+                Toast.makeText(act, "Titik Akhir \"" + item.title + "\" ditandai di " + AudioDspEngine.formatMsShort(pos), Toast.LENGTH_SHORT).show();
             } else {
                 if (pos <= 300L) {
-                    Toast.makeText(act,
-                            "Putar atau geser dulu ke detik akhir yang dimau sebelum menekan Tandai Akhir.",
-                            Toast.LENGTH_SHORT).show();
+                    Toast.makeText(act, "Putar atau geser dulu ke detik akhir yang dimau sebelum menekan Tandai Akhir.", Toast.LENGTH_SHORT).show();
                     return;
                 }
                 attachBacksoundWithRange(item, 0L, pos);
@@ -499,7 +579,7 @@ public final class DramaSoundPaletteHelper {
         }
 
         private void handleClearBacksoundEnd(final StudioGudangAudioManager.GudangItem item) {
-            CueItem existing = findCueByAssetId(item.id);
+            CueItem existing = findLatestCueByAssetId(item.id);
             if (existing == null) return;
             pushUndo();
             existing.endMs = 0L;
@@ -521,11 +601,8 @@ public final class DramaSoundPaletteHelper {
                 cues.add(cue);
                 refreshAllInPlace();
                 host.onPaletteAppliedCue(cue);
-                if (autoPreRoll2Sec && host.getTotalDurationMs() > 0) {
-                    host.playTransitionFromMs(cue.atMs);
-                } else {
-                    host.triggerOneShotCue(cue);
-                }
+                if (autoPreRoll2Sec && host.getTotalDurationMs() > 0) host.playTransitionFromMs(cue.atMs);
+                else host.triggerOneShotCue(cue);
             });
         }
 
@@ -544,11 +621,8 @@ public final class DramaSoundPaletteHelper {
             cues.add(cue);
             refreshAllInPlace();
             host.onPaletteAppliedCue(cue);
-            if (autoPreRoll2Sec && host.getTotalDurationMs() > 0) {
-                host.playTransitionFromMs(cue.atMs);
-            } else {
-                host.triggerOneShotCue(cue);
-            }
+            if (autoPreRoll2Sec && host.getTotalDurationMs() > 0) host.playTransitionFromMs(cue.atMs);
+            else host.triggerOneShotCue(cue);
         }
 
         private void pushUndo() {
@@ -558,7 +632,7 @@ public final class DramaSoundPaletteHelper {
             redoStack.clear();
         }
 
-        private void attachAssetItemNow(final StudioGudangAudioManager.GudangItem item, ItemRowHolder holder) {
+        private void attachAssetItemNow(final StudioGudangAudioManager.GudangItem item) {
             final long curPlayhead = host.getPlayheadMs();
             StudioGudangAudioManager.stopPreview();
             StudioGudangAudioManager.materializeItemAsync(act, item, file -> {
@@ -580,25 +654,6 @@ public final class DramaSoundPaletteHelper {
                     host.triggerOneShotCue(cue);
                 }
             });
-        }
-
-        private void removeAssetItemAsCancel(StudioGudangAudioManager.GudangItem item) {
-            boolean removedAny = false;
-            pushUndo();
-            for (int i = cues.size() - 1; i >= 0; i--) {
-                if (item.id.equals(cues.get(i).assetId)) {
-                    stopLoopPlayer(cues.get(i));
-                    cues.remove(i);
-                    removedAny = true;
-                }
-            }
-            if (!removedAny && !undoStack.isEmpty()) {
-                undoStack.remove(undoStack.size() - 1);
-            }
-            if (removedAny) {
-                Toast.makeText(act, "Nggak jadi pakai: " + item.title, Toast.LENGTH_SHORT).show();
-            }
-            refreshAllInPlace();
         }
 
         public void refreshAllInPlace() {
@@ -649,7 +704,7 @@ public final class DramaSoundPaletteHelper {
 
             if (!mountedListExpanded) {
                 TextView tvSummary = new TextView(act);
-                tvSummary.setText(cues.size() + " item terpasang siap dikonversi. Ketuk \"Atur (" + cues.size() + ")\" di atas jika ingin geser detik atau volume.");
+                tvSummary.setText(cues.size() + " item terpasang siap dikonversi. Ketuk \"Atur (" + cues.size() + ")\" jika ingin geser detik, atur volume, atau hapus detik tertentu.");
                 tvSummary.setTextSize(12);
                 tvSummary.setTextColor(UiKit.textMuted(prefs));
                 card.addView(tvSummary);
@@ -694,7 +749,7 @@ public final class DramaSoundPaletteHelper {
                     c.volume = Math.min(2.0f, c.volume + 0.15f);
                     refreshMountedListUi();
                 }));
-                ctrlRow.addView(OfficeUtils.makeRowButton(act, "Hapus", "Nggak jadi pakai item ini", UiKit.ACCENT_DANGER, Color.WHITE, v -> {
+                ctrlRow.addView(OfficeUtils.makeRowButton(act, "Hapus", "Hapus item ini saja", UiKit.ACCENT_DANGER, Color.WHITE, v -> {
                     pushUndo();
                     stopLoopPlayer(c);
                     cues.remove(idx);
@@ -721,10 +776,6 @@ public final class DramaSoundPaletteHelper {
         for (CueItem c : cues) stopLoopPlayer(c);
     }
 
-    /**
-     * Memastikan Backsound Musik yang punya jam masuk tertentu hanya berbunyi
-     * saat posisi putar memasuki rentangnya [atMs, endMs), bukan sejak 00:00.
-     */
     public static void syncCuesWithPlayhead(Activity act, List<CueItem> cues, long prevPosMs, long curPosMs, boolean activelyPlaying) {
         if (!activelyPlaying || cues == null || cues.isEmpty()) return;
         for (CueItem c : cues) {

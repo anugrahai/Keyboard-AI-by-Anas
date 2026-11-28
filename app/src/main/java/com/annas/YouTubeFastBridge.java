@@ -271,10 +271,11 @@ public final class YouTubeFastBridge {
         String videoId = extractYouTubeVideoId(youtubeUrl);
         if (videoId.isEmpty()) throw new IllegalArgumentException("Bukan URL video YouTube.");
 
-        // Coba ANDROID_VR dulu (terbukti cepat ~300ms & HTTP 206), fallback IOS
+        // Coba IOS dulu (lebih sering tembus lagu musik tanpa LOGIN_REQUIRED), lalu ANDROID_VR,
+        // dan verifikasi cepat HTTP 200/206 sebelum diberikan ke MediaPlayer.
         Throwable lastErr = null;
         for (int attempt = 0; attempt < 2; attempt++) {
-            boolean useVr = (attempt == 0);
+            boolean useVr = (attempt == 1);
             try {
                 JSONObject player = callInnertubePlayer(videoId, useVr);
                 JSONObject ps = player.optJSONObject("playabilityStatus");
@@ -290,14 +291,25 @@ public final class YouTubeFastBridge {
 
                 if (!wantVideo) {
                     pickBestAudioFormat(sd.optJSONArray("adaptiveFormats"), targetAudioMode, targetBitrateKbps, spec);
-                    if (!spec.audioUrl.isEmpty()) return spec;
+                    if (!spec.audioUrl.isEmpty() && probeStreamPlayable(spec.audioUrl, spec.userAgent)) {
+                        return spec;
+                    }
+                    throw new IllegalStateException("Audio URL ditolak (403)");
                 } else {
                     if (maxHeight <= 720) {
                         pickProgressiveVideo(sd.optJSONArray("formats"), maxHeight, spec);
-                        if (!spec.videoUrl.isEmpty()) return spec;
+                        if (!spec.videoUrl.isEmpty() && probeStreamPlayable(spec.videoUrl, spec.userAgent)) {
+                            return spec;
+                        }
+                        spec.videoUrl = "";
+                        spec.progressiveSingleFile = false;
                     }
                     pickBestVideoAndAudio(sd.optJSONArray("adaptiveFormats"), maxHeight, spec);
-                    if (!spec.videoUrl.isEmpty() && !spec.audioUrl.isEmpty()) return spec;
+                    if (!spec.videoUrl.isEmpty() && !spec.audioUrl.isEmpty()
+                            && probeStreamPlayable(spec.videoUrl, spec.userAgent)) {
+                        return spec;
+                    }
+                    throw new IllegalStateException("Video URL ditolak (403)");
                 }
             } catch (Throwable t) {
                 lastErr = t;
@@ -305,6 +317,23 @@ public final class YouTubeFastBridge {
             }
         }
         throw new IllegalStateException("Fast stream gagal: " + (lastErr != null ? lastErr.getMessage() : "unknown"));
+    }
+
+    private static boolean probeStreamPlayable(String urlStr, String ua) {
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL(urlStr).openConnection();
+            conn.setConnectTimeout(6000);
+            conn.setReadTimeout(6000);
+            conn.setRequestProperty("User-Agent", ua);
+            conn.setRequestProperty("Range", "bytes=0-1");
+            int code = conn.getResponseCode();
+            return code == 200 || code == 206;
+        } catch (Throwable t) {
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
     }
 
     private static void pickBestAudioFormat(JSONArray adaptive, String mode, int targetKbps, StreamSpec spec) {
